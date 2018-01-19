@@ -41,6 +41,7 @@ import Database.ORM.HDBC
 import Database.ORM.Query
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Condition
 import Debug.Trace
 
 -- ------------------------------------------------------------
@@ -83,75 +84,6 @@ instance Show (JoinEdge g t) where
 -- ------------------------------------------------------------
 -- Query elements.
 -- ------------------------------------------------------------
-
--- TODO
--- テーブルとカラムを指定することで、t0.columnの文字列に落とせる方法。
---
--- data ColumnLabel = ColumnLabel String
--- 
--- instance (KnownSymbol l) => IsLabel l ColumnLabel where
---     fromLabel = ColumnLabel (symbolVal (Proxy :: Proxy l))
--- 
--- -- eq @News.Model #title "abc"
--- eq_ :: (RecordWrapper a, SqlValueConstraint v, Condition c)
---     => ColumnLabel
---     -> v
---     -> c
--- eq_ (ColumnLabel n) p value = (n, [value])
---
--- TODO
--- SQLを与えて実行してからグラフに落とす方法。
--- q <- "SELECT a.id, count(b.*), (SELECT c FROM C WHERE a_id = a.id) FROM A as a INNER JOIN B as b ON a.b_id = b.id WHERE ..."
--- カラムの並びに対応させる型レベルリストが必要。
--- カラムの並びと完全に揃えなければならないため、生のSQLは禁止。
--- select [cols :: A, cols :: B, ...]
--- カラムでは無い値を文字列で書きたい場合、
--- select [cols :: A ++ ["count(b.*)", "(SELECT c FROM C WHERE a_id = a.id)"], cols :: B, ...]
--- "SELECT " ++ cols @A ["COUNT(b.*)", "(SELECT...)"]
--- とすると、Aのextra fieldsの数と追加のカラムの数をチェックできる？
--- ExtraだけのRecordWrapperがあると、それはreadSchemaでこける。
--- ただしTableMetaはprimary keyによる同一レコードチェックにしか利用していないため、Maybeなどに変えても問題はなさそう。
--- 1) select (cols graph ++ cols extras)として全行をextrasに対応させる方法
--- 2) RecordWrapperにextra fieldを与えて、関連を維持しつつ取ってくる方法
--- まとめられそう。どっちもRecordWrapperにしてExtraだけのRecordWrapperも利用できるようにする？
--- FROM節のエイリアスとの関連はどうするか。
--- [("t0", cols @A), ("t1", cols @B), ("t2", cols @Extra)]
--- これを与えてさらにグラフも与えれば、B -> Aの関連を表すエッジも追加される。
--- つまり、selectNodesではカラムの並びが完全にグラフから決められたが、
--- 並びを明示的に与える関数を作成すれば、グラフから決めた場合に取り除かれた関連のない独立モデルも利用することができる。
-
-class ColumnRepr c (as :: [*]) where
-    resolveColumn :: Proxy as
-                  -> [String]
-                  -> c
-                  -> String
-
-instance ColumnRepr String as where
-    resolveColumn _ _ c = c
-
-data TableColumn a = TableColumn (Proxy a) String
-
-instance (KnownNat (ElemIndex a as)) => ColumnRepr (TableColumn a) as where
-    resolveColumn _ aliases (TableColumn t c) =
-        let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a as))
-        in (aliases !! index) ++ "." ++ c
-
--- | Declares methods to get where clause and values for placeholders in it.
-class Condition c where
-    -- | Gets the string of where clause.
-    whereClause :: c -- ^ Condition.
-                -> String -- ^ Where clause.
-
-    -- | Gets values for placeholders.
-    whereValues :: c -- ^ Condition.
-                -> [SqlValue] -- ^ Values for placeholders.
-
-instance (Convertible v SqlValue) => Condition (String, [v]) where
-    whereClause (c, _) = c
-    whereValues (_, vs) = map toSql vs
-
--- | Gets an empty condition.
-unconditional = [] :: [(String, [Int])]
 
 -- | Predefined sorting orders.
 data SortType = ASC -- ^ Ascending order.
@@ -426,16 +358,6 @@ instance (RecordWrapper a, RecordWrapper b, GraphContainer g (EdgeT a b rs), Kno
 -- ------------------------------------------------------------
 -- Type level functions.
 -- ------------------------------------------------------------
-
--- | Gets a type at an index of a type level list.
-type family ElemOf (i :: Nat) (as :: [*]) :: * where
-    ElemOf 0 (a ': as) = a
-    ElemOf i (a ': as) = ElemOf (i - 1) as
-
--- | Gets an index of a type in a type level list.
-type family ElemIndex (a :: *) (as :: [*]) :: Nat where
-    ElemIndex a (a ': as) = 0
-    ElemIndex a (x ': as) = 1 + (ElemIndex a as)
 
 -- | Create reversed type level list.
 type family Reverse (as :: [*]) :: [*]
