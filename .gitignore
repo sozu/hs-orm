@@ -1,0 +1,4 @@
+.stack-work/
+hs-orm.cabal
+*~
+**/.DS_Store

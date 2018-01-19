@@ -1,0 +1,3 @@
+[submodule "hs-graph"]
+	path = hs-graph
+	url = https://github.com/sozu/hs-graph.git
