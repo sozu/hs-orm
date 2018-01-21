@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Database.ORM.Condition where
 
@@ -18,54 +19,71 @@ import GHC.TypeLits
 import Data.Convertible
 import Database.HDBC
 import Database.ORM.Record
+import Database.ORM.Utility
 
-data FormattableCondition (ts :: [*]) = FormattableCondition String String (Proxy ts) [SqlValue]
+data Condition (ts :: [*]) = Condition [String] (Proxy ts) [SqlValue]
 
 -- cond @'[@A.Model, B.Model] "??" "3 * ??.val < 7 + ??.d"
 cond :: forall ts. (AllRecord (ts :: [*]))
      => String
      -> String
-     -> FormattableCondition ts
-cond rep fmt = FormattableCondition fmt rep (Proxy :: Proxy ts) []
+     -> Condition ts
+cond rep fmt = Condition (split fmt) (Proxy :: Proxy ts) []
+    where
+        split s 
+            | s == "" = [""]
+            | L.isPrefixOf rep s = "" : split (drop (length rep) s)
+            | otherwise = let (v:vs) = split (tail s) in (head s:v) : vs
 
-(?+) :: (Convertible a SqlValue)
-     => FormattableCondition ts
+(..?) :: Condition '[]
+(..?) = cond @'[] "" ""
+
+(.+) :: (Convertible a SqlValue)
+     => Condition ts
      -> a
-     -> FormattableCondition ts
-(?+) (FormattableCondition fmt rep pts vs) v = FormattableCondition fmt rep pts (vs ++ [convert v])
+     -> Condition ts
+(.+) (Condition fmt pts vs) v = Condition fmt pts (vs ++ [convert v])
 
-class ElemIndexes (ts :: [*]) (as :: [*]) where
-    elemIndexes :: Proxy ts -> Proxy as -> [Int]
+parense :: [String]
+        -> [String]
+parense (s:ss) = ('(':s) : (init ss ++ [last ss ++ ")"])
 
-instance ElemIndexes '[] (as :: [*]) where
-    elemIndexes _ _ = []
+(.&) :: forall ts us. Condition ts
+     -> Condition us
+     -> Condition (Concat ts us)
+(.&) (Condition fmt1 pts1 vs1) (Condition fmt2 pts2 vs2) = Condition merged (Proxy :: Proxy (Concat ts us)) (vs1 ++ vs2)
+    where
+        merged = let p1 = parense fmt1
+                     p2 = parense fmt2
+                 in init p1 ++ [last p1 ++ " AND " ++ head p2] ++ tail p2
 
-instance (KnownNat (ElemIndex t as), ElemIndexes ts as) => ElemIndexes (t ': ts) (as :: [*]) where
-    elemIndexes _ p = fromInteger (natVal (Proxy :: Proxy (ElemIndex t as))) : elemIndexes (Proxy :: Proxy ts) p
+(.|) :: forall ts us. Condition ts
+     -> Condition us
+     -> Condition (Concat ts us)
+(.|) (Condition fmt1 pts1 vs1) (Condition fmt2 pts2 vs2) = Condition merged (Proxy :: Proxy (Concat ts us)) (vs1 ++ vs2)
+    where
+        merged = let p1 = parense fmt1
+                     p2 = parense fmt2
+                 in init p1 ++ [last p1 ++ " OR " ++ head p2] ++ tail p2
 
 format :: (ElemIndexes ts as)
-       => FormattableCondition ts
+       => Condition ts
        -> Proxy (as :: [*])
        -> [String]
        -> String
-format (FormattableCondition fmt rep pts _) p aliases = replace fmt rep tables
+format (Condition fmt pts _) p aliases = foldl (\s (t, f) -> s ++ t ++ f) "" $ zip ("":tables) fmt
     where
         tables = map (aliases !!) (elemIndexes pts p)
-        replace :: String -> String -> [String] -> String
-        replace s r vs
-            | s == "" = ""
-            | L.isPrefixOf r s = (head vs) ++ replace (drop (length r) s) r (tail vs)
-            | otherwise = (head s) : replace (tail s) r vs
 
 formatCondition :: (ElemIndexes ts as)
-                => FormattableCondition ts
+                => Condition ts
                 -> Proxy (as :: [*])
                 -> [String]
                 -> (String, [SqlValue])
-formatCondition fc@(FormattableCondition _ _ _ vs) p aliases = (format fc p aliases, vs)
+formatCondition fc@(Condition _ _ vs) p aliases = (format fc p aliases, vs)
 
 -- | Declares methods to get where clause and values for placeholders in it.
-class Condition c where
+class FormattedCondition c where
     -- | Gets the string of where clause.
     whereClause :: c -- ^ Condition.
                 -> String -- ^ Where clause.
@@ -74,31 +92,14 @@ class Condition c where
     whereValues :: c -- ^ Condition.
                 -> [SqlValue] -- ^ Values for placeholders.
 
-instance (Convertible v SqlValue) => Condition (String, [v]) where
+instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
     whereClause (c, _) = c
     whereValues (_, vs) = map toSql vs
 
 -- | Gets an empty condition.
 unconditional = [] :: [(String, [Int])]
 
--- ------------------------------------------------------------
--- Type level functions.
--- ------------------------------------------------------------
-
--- | Gets a type at an index of a type level list.
-type family ElemOf (i :: Nat) (as :: [*]) :: * where
-    ElemOf 0 (a ': as) = a
-    ElemOf i (a ': as) = ElemOf (i - 1) as
-
--- | Gets an index of a type in a type level list.
-type family ElemIndex (a :: *) (as :: [*]) :: Nat where
-    ElemIndex a (a ': as) = 0
-    ElemIndex a (x ': as) = 1 + (ElemIndex a as)
-
-type family HasElems (as :: [*]) (bs :: [*]) :: Constraint where
-    HasElems (a ': '[]) bs = KnownNat (ElemIndex a bs)
-    HasElems (a ': as) bs = (KnownNat (ElemIndex a bs), HasElems as bs)
-
 type family AllRecord (as :: [*]) :: Constraint where
+    AllRecord '[] = ()
     AllRecord (a ': '[]) = RecordWrapper a
     AllRecord (a ': as) = (RecordWrapper a, AllRecord as)

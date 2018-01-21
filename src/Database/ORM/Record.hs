@@ -14,6 +14,7 @@
 
 module Database.ORM.Record (
     RecordWrapper(..)
+    , rw'type
     , FieldNames(..)
     , recordFields
     , recordValues
@@ -62,6 +63,11 @@ class (FieldNames (RW'Type a), KnownSymbol (RW'Name a), Forall (KeyConstraint Kn
     getName :: proxy a -- ^ Proxy to this record model type.
             -> String -- ^ Table name of @a@.
     getName p = symbolVal (Proxy :: Proxy (RW'Name a))
+
+rw'type :: forall a. (RecordWrapper a)
+        => Proxy a
+        -> Proxy (RW'Type a)
+rw'type _ = Proxy :: Proxy (RW'Type a)
 
 class FieldNames (as :: [Assoc Symbol *]) where
     fieldNames :: proxy as -> [String]

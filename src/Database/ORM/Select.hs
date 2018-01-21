@@ -42,6 +42,7 @@ import Database.ORM.Query
 import Database.ORM.Model
 import Database.ORM.Record
 import Database.ORM.Condition
+import Database.ORM.Utility
 import Debug.Trace
 
 -- ------------------------------------------------------------
@@ -82,35 +83,6 @@ instance Show (JoinEdge g t) where
                     RightJoinType -> "RIGHT JOIN "
 
 -- ------------------------------------------------------------
--- Query elements.
--- ------------------------------------------------------------
-
--- | Predefined sorting orders.
-data SortType = ASC -- ^ Ascending order.
-              | DESC -- ^ Descending order.
-              deriving (Show)
-
--- | Declares methods to get column name for sort and the order.
-class OrderBy o where
-    -- | Gets a column name used for sorting.
-    sortColumn :: o -- ^ Sorting information.
-               -> String -- ^ Column name.
-
-    -- | Gets sorting order.
-    sortType :: o -- ^ Sorting information.
-             -> SortType -- ^ Sorting order.
-
--- | Gets default sorting.
-unordered = [] :: [(String, SortType)]
-
-instance OrderBy (String, SortType) where
-    sortColumn (c, _) = c
-    sortType (_, t) = t
-
--- | Type synonym where each value corresponds to LIMIT and OFFSET value respectively.
-type LimitOffset = Maybe (Int, Int)
-
--- ------------------------------------------------------------
 -- Select functions.
 -- ------------------------------------------------------------
 
@@ -134,37 +106,71 @@ type Selectable g a = (KnownNat (Length (EdgeTypes g a)), SelectColumns (EdgeTyp
     Starting from a model which is specified by second argument,
     model types in the graph is collected and tables of those models are joined according to join informations defined in the graph.
 -}
-selectNodes :: forall db g a c o. (WithDB db, GraphContainer g a, Selectable g a, RecordWrapper a, Condition c, OrderBy o)
+selectNodes :: forall db g a o ts us. (WithDB db, GraphContainer g a, Selectable g a, RecordWrapper a, ElemIndexes ts (EdgeTypes g a), ElemIndexes us (EdgeTypes g a))
             => Proxy g -- ^ Type of a graph.
             -> Proxy a -- ^ Starting type of a model in the graph.
-            -> [c] -- ^ Conditions.
-            -> [o] -- ^ Sorting informations.
+            -> Condition ts -- ^ Conditions.
+            -> OrderBy us -- ^ Sorting informations.
             -> LimitOffset -- ^ Limit and offset values if needed.
             -> IO g -- ^ Graph containing nodes and edges representing the result of query.
 selectNodes pg pa conds sorts lo = do
+    let modelTypes = Proxy :: Proxy (EdgeTypes g a)
+
     let n = natVal (Proxy :: Proxy (Length (EdgeTypes g a)))
     let aliases = map (\i -> 't':show i) [0..n-1]
 
     (cols, joins) <- columnsAndTables pg pa aliases
 
-    let q = _selectQuery cols (getName pa) joins conds sorts lo
+    let w = formatCondition conds modelTypes aliases
+    let o = formatOrderBy sorts modelTypes aliases
+
+    let q = _selectQuery cols (getName pa) joins w o lo
 
     context <- readIORef ?db 
     let conn = connect context
 
-    stmt <- prepare conn (trace q q)
-    execute stmt $ (concat $ map whereValues conds) ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
+    stmt <- prepare conn q
+    execute stmt $ whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
     rows <- fetchAllRows stmt
 
     (_, graph) <- flip runStateT (newGraph :: g) $ do
                     forM_ rows $ \r -> do
-                        cs <- _parseRow (Proxy :: Proxy (EdgeTypes g a)) $ sep r cols -- HList MaybeCursor (EdgeTypes g a)
+                        cs <- _parseRow modelTypes $ sep r cols -- HList MaybeCursor (EdgeTypes g a)
                         _addRelations cs joins
 
     return graph
     where
         sep as [] = []
         sep as (bs:bss) = let c = length bs in take c as : sep (drop c as) bss
+
+{-
+select :: forall db g p ms. (WithDB db, GraphFactory g, GenerateColumns p ms)
+       => Proxy g
+       -> p ms
+       -> String
+       -> [SqlValue]
+       -> IO g
+select pg columns query holder = do
+    context <- readIORef ?db
+    let conn = connect context
+
+    let joins = undefined --TODO
+    let cols = generateColumns columns
+
+    stmt <- prepare (connect context) query
+    execute stmt holder
+    rows <- fetchAllRows stmt
+
+    (_, graph) <- flip runStateT (newGraph :: g) $ do
+                    forM_ rows $ \r -> do
+                        cs <- _parseRow (Proxy :: Proxy ms) $ sep r cols
+                        _addRelations cs joins
+
+    return graph
+    where
+        sep as [] = []
+        sep as (bs:bss) = let c = length bs in take c as : sep (drop c as) bss
+-}
 
 -- ------------------------------------------------------------
 -- Graph constructions by querying result.
@@ -264,24 +270,22 @@ _findInGraph t v = do
 -- ------------------------------------------------------------
 
 -- | Create selecting query string.
-_selectQuery :: (Condition c, OrderBy o)
+_selectQuery :: (FormattedCondition c, FormattedOrderBy o)
              => [[String]] -- ^ Qualified columns of tables.
              -> String -- ^ Table name.
              -> [JoinEdge g t] -- ^ Join informations.
-             -> [c] -- ^ Conditions.
-             -> [o] -- ^ Sorting informations.
+             -> c -- ^ Conditions.
+             -> o -- ^ Sorting informations.
              -> LimitOffset -- ^ Limit and offset values if needed.
              -> String -- ^ Created query string.
-_selectQuery cols t joins conds orders lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
+_selectQuery cols t joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
         s = "SELECT " ++ L.intercalate ", " (L.concat cols)
         f = " FROM " ++ t ++ " AS t0 " ++ L.intercalate " " (map show joins)
-        w = if length conds > 0
-                then " WHERE " ++ L.intercalate " AND " ['(' : whereClause c ++ ")" | c <- conds]
-                else ""
-        o = if length orders > 0
-                then " ORDER BY " ++ L.intercalate ", " [sortColumn o ++ " " ++ show (sortType o) | o <- orders]
-                else ""
+        w = let w' = whereClause conds
+            in if w' == "" then "" else " WHERE " ++ w'
+        o = let o' = orders sorts
+            in if o' == "" then "" else " ORDER BY " ++ o'
 
 -- | Obtains column names and join informations to construct the graph starting from a model.
 columnsAndTables :: forall db g a. (WithDB db, GraphContainer g a, Selectable g a)
@@ -426,12 +430,3 @@ type family Edges g :: [*] where
     Edges (xs :><: x) = Edges xs
     Edges (EdgeT a b rs) = '[ EdgeT a b rs]
     Edges _ = '[]
-
--- | Appends a type to a type level list.
-type family Append a as :: [k] where
-    Append x '[] = '[x]
-    Append x (y ': ys) = y ': Append x ys
-
-type family Length (as :: [*]) :: Nat where
-    Length '[] = 0
-    Length (x ': xs) = 1 + Length xs
