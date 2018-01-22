@@ -98,8 +98,3 @@ instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
 
 -- | Gets an empty condition.
 unconditional = [] :: [(String, [Int])]
-
-type family AllRecord (as :: [*]) :: Constraint where
-    AllRecord '[] = ()
-    AllRecord (a ': '[]) = RecordWrapper a
-    AllRecord (a ': as) = (RecordWrapper a, AllRecord as)

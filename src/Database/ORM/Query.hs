@@ -39,26 +39,37 @@ class AliasModel m where
     columnExpressions :: proxy m
                       -> [String]
 
+    getAlias :: proxy m
+             -> String
+
 instance (RecordWrapper m, KnownSymbol a) => AliasModel (m @: (a :: Symbol)) where
     columnExpressions _ = map ((alias ++ ".") ++) $ fieldNames (Proxy :: Proxy (RW'Type m))
         where
             alias = symbolVal (Proxy :: Proxy a)
+    getAlias _ = symbolVal (Proxy :: Proxy a)
 
 instance (RecordWrapper m, KnownSymbol e) => AliasModel (m @@ (e :: Symbol)) where
     columnExpressions _ = [symbolVal (Proxy :: Proxy e)]
+    getAlias _ = symbolVal (Proxy :: Proxy e)
 
 class GenerateColumns p (ms :: [*]) where
     generateColumns :: p ms
                     -> [[String]]
 
+    getAliases :: p ms
+               -> [String]
+
 instance GenerateColumns p '[] where
     generateColumns _ = []
+    getAliases _ = []
 
 instance (AliasModel m, GenerateColumns Proxy ms) => GenerateColumns Proxy (m ': ms) where
     generateColumns _ = columnExpressions (Proxy :: Proxy m) : generateColumns (Proxy :: Proxy ms)
+    getAliases _ = getAlias (Proxy :: Proxy m) : getAliases (Proxy :: Proxy ms)
 
 instance (RecordWrapper m, GenerateColumns AliasModels ms) => GenerateColumns AliasModels (m ': ms) where
     generateColumns (AliasModels (a : as)) = map ((a ++ ".") ++) (fieldNames (Proxy :: Proxy (RW'Type m))) : generateColumns (AliasModels as :: AliasModels ms)
+    getAliases (AliasModels as) = as
 
 -- ------------------------------------------------------------
 -- Query holder
@@ -122,8 +133,3 @@ unordered = [] :: [(String, SortType)]
 
 -- | Type synonym where each value corresponds to LIMIT and OFFSET value respectively.
 type LimitOffset = Maybe (Int, Int)
-
-type family AllRecord (as :: [*]) :: Constraint where
-    AllRecord '[] = ()
-    AllRecord (a ': '[]) = RecordWrapper a
-    AllRecord (a ': as) = (RecordWrapper a, AllRecord as)

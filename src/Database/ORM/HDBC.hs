@@ -147,9 +147,12 @@ readSchema :: (WithDB db)
            -> IO TableMeta -- ^ Schema of the table.
 readSchema t = do
     res <- readIORef ?resource
-    tm <- readTableMeta (schemaReader (settings res)) t
-    saveSchema t tm
-    return tm
+    case M.lookup t (schema res) of
+        Just tm -> return tm
+        Nothing -> do
+            tm <- readTableMeta (schemaReader (settings res)) t
+            saveSchema t tm
+            return tm
 
 {- | Saves a table schema in DBResource.
 -}

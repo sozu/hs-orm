@@ -30,7 +30,7 @@ import Control.Applicative
 import Control.Monad.State
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (maybe)
+import Data.Maybe (maybe, isJust)
 import Data.Convertible
 import Data.IORef
 import Data.Proxy
@@ -66,7 +66,7 @@ data JoinEdge g t = forall a b (rs :: [*]). (GraphContainer g (EdgeT a b rs), Jo
     => JoinEdge { fromProxy :: Proxy a -- ^ Proxy to a model type of lhs table.
                 , toProxy :: Proxy b -- ^ Proxy to a model type of rhs table.
                 , relationProxy :: Proxy rs -- ^ Proxy to a type from which join type can be decided.
-                , getJoin :: Join -- ^ Get the join information of this edge.
+                , getJoin :: Maybe Join -- ^ Get the join information of this edge.
                 }
 
 -- | Returns a join type from edge information.
@@ -75,7 +75,8 @@ joinTypeOf :: JoinEdge g t -- ^ Edge information
 joinTypeOf (JoinEdge _ _ r _) = getJoinType r
 
 instance Show (JoinEdge g t) where
-    show je = let j = getJoin je in jt ++ leftTable j ++ " AS " ++ leftAlias j ++ " ON " ++ leftAlias j ++ "." ++ leftColumn j ++ " = " ++ rightAlias j ++ "." ++ rightColumn j
+    show (JoinEdge _ _ _ Nothing) = ""
+    show je@(JoinEdge _ _ _ (Just j)) = jt ++ leftTable j ++ " AS " ++ leftAlias j ++ " ON " ++ leftAlias j ++ "." ++ leftColumn j ++ " = " ++ rightAlias j ++ "." ++ rightColumn j
         where
             jt = case joinTypeOf je of
                     InnerJoinType -> "INNER JOIN "
@@ -100,6 +101,11 @@ type EdgeTypes g a = ArrangeEdgeTypes (CollectEdges '[a] (Edges g))
 -}
 type Selectable g a = (KnownNat (Length (EdgeTypes g a)), SelectColumns (EdgeTypes g a) (EdgeTypes g a), Joins g a (CollectEdges '[a] (Edges g)) (EdgeTypes g a), RowParser g (EdgeTypes g a), FindCursor a (EdgeTypes g a))
 
+type family Head (as :: [*]) :: * where
+    Head (a ': as) = a
+
+type Selectables g ms = (Joins g (Head ms) (CollectEdges ms (Edges g)) ms, RowParser g ms, FindCursor (Head ms) ms)
+
 {- | Selects rows and constructs a graph of given type.
 
     Select query is created to get values enough to construct given graph.
@@ -119,76 +125,84 @@ selectNodes pg pa conds sorts lo = do
     let n = natVal (Proxy :: Proxy (Length (EdgeTypes g a)))
     let aliases = map (\i -> 't':show i) [0..n-1]
 
-    (cols, joins) <- columnsAndTables pg pa aliases
+    (columns, joins) <- columnsAndTables pg pa aliases
 
     let w = formatCondition conds modelTypes aliases
     let o = formatOrderBy sorts modelTypes aliases
 
-    let q = _selectQuery cols (getName pa) joins w o lo
+    let q = _selectQuery columns (getName pa) joins w o lo
+    let holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
 
-    context <- readIORef ?db 
-    let conn = connect context
+    execSelect pg columns joins modelTypes q holder
 
-    stmt <- prepare conn q
-    execute stmt $ whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
-    rows <- fetchAllRows stmt
+{- | Executes a query and constructs a graph holding obtained values.
 
-    (_, graph) <- flip runStateT (newGraph :: g) $ do
-                    forM_ rows $ \r -> do
-                        cs <- _parseRow modelTypes $ sep r cols -- HList MaybeCursor (EdgeTypes g a)
-                        _addRelations cs joins
-
-    return graph
-    where
-        sep as [] = []
-        sep as (bs:bss) = let c = length bs in take c as : sep (drop c as) bss
-
-{-
-select :: forall db g p ms. (WithDB db, GraphFactory g, GenerateColumns p ms)
+    You must give a query which conforms to some rules.
+    - Column expressions has the same columns as fileds of corresponding model except for foreign key columns.
+    - To recever relationships between tables, foreign key column and referenced column must appear in column expressions.
+    - The order of tables in column expression must the same as the order of types of models.
+select :: forall db g p ms. (WithDB db, Selectables g ms, GenerateColumns p ms)
        => Proxy g
        -> p ms
        -> String
        -> [SqlValue]
        -> IO g
-select pg columns query holder = do
+select pg gc query holder = do
     context <- readIORef ?db
     let conn = connect context
 
-    let joins = undefined --TODO
-    let cols = generateColumns columns
+    let columns = generateColumns gc
+    joins <- collectJoins (Proxy :: Proxy (CollectEdges ms (Edges g))) (Proxy :: Proxy ms) (getAliases gc)
+
+    -- TODO: 
+    -- Enables appending values in column expressions to place holders.
+    execSelect pg columns joins (Proxy :: Proxy ms) query holder
+-}
+
+-- | Executes a query and constructs a graph holding obtained values.
+execSelect :: forall db g a ms. (WithDB db, Selectable g a)
+           => Proxy g -- ^ Type of a graph.
+           -> [[String]] -- ^ List of column names separated by tables.
+           -> [JoinEdge g a] -- ^ Join informations.
+           -- -> Proxy (ms :: [*]) -- ^ Types of models in the same order as column expresions of the query.
+           -> Proxy (EdgeTypes g a)
+           -> String -- ^ Query string.
+           -> [SqlValue] -- ^ Values for place holders.
+           -> IO g -- ^ Constructed graph.
+execSelect pg columns joins modelTypes query holder = do
+    context <- readIORef ?db
 
     stmt <- prepare (connect context) query
     execute stmt holder
-    rows <- fetchAllRows stmt
+    rows <- fetchAllRowsAL stmt
 
     (_, graph) <- flip runStateT (newGraph :: g) $ do
                     forM_ rows $ \r -> do
-                        cs <- _parseRow (Proxy :: Proxy ms) $ sep r cols
-                        _addRelations cs joins
+                        cs <- parseRow modelTypes $ sep r columns
+                        addRelations cs joins
 
     return graph
     where
         sep as [] = []
         sep as (bs:bss) = let c = length bs in take c as : sep (drop c as) bss
--}
 
 -- ------------------------------------------------------------
 -- Graph constructions by querying result.
 -- ------------------------------------------------------------
 
 -- | Adds edges corresponding to relations in the graph.
-_addRelations :: (GraphFactory g, Monad m)
-              => HList MaybeCursor (EdgeTypes g t) -- ^ Cursors of model types.
-              -> [JoinEdge g t] -- ^ Edge informations of relations in the graph.
-              -> StateT g m () -- ^ New state holding modified graph.
-_addRelations l = mapM_ (_addEdge l)
+addRelations :: (GraphFactory g, Monad m)
+             => HList MaybeCursor (EdgeTypes g t) -- ^ Cursors of model types.
+             -> [JoinEdge g t] -- ^ Edge informations of relations in the graph.
+             -> StateT g m () -- ^ New state holding modified graph.
+addRelations l = mapM_ (addEdge l)
 
 -- | Adds an edge to the graph if cursors of both ends of the edge exist.
-_addEdge :: (GraphFactory g, Monad m)
-         => HList MaybeCursor (EdgeTypes g t) -- ^ Cursors of model types.
-         -> JoinEdge g t -- ^ Edge information to add.
-         -> StateT g m () -- ^ New state holding modified graph.
-_addEdge l (JoinEdge f t r _) = maybe (return ()) id $ (-*<) <$> (fmap (r +|) $ _findCursor l f) <*> _findCursor l t
+addEdge :: (GraphFactory g, Monad m)
+        => HList MaybeCursor (EdgeTypes g t) -- ^ Cursors of model types.
+        -> JoinEdge g t -- ^ Edge information to add.
+        -> StateT g m () -- ^ New state holding modified graph.
+addEdge l (JoinEdge f t r _) = maybe (return ()) id $ (-*<) <$> (fmap (r +|) $ findCursor l f) <*> findCursor l t
 
 -- | Constrains to claim that the model types of `a` and `b` both exist in the arranged models.
 -- This means that cursor whose underlying model is `a` or `b` will be found.
@@ -200,16 +214,16 @@ type CursorFindable g t a b = (FindCursor a (EdgeTypes g t), FindCursor b (EdgeT
     In that context, Nothing means no relational record is found.
 -}
 class FindCursor a (as :: [*]) where
-    _findCursor :: HList MaybeCursor as -> Proxy a -> Maybe (Cursor a)
+    findCursor :: HList MaybeCursor as -> Proxy a -> Maybe (Cursor a)
 
 instance FindCursor a '[] where
-    _findCursor _ _ = Nothing
+    findCursor _ _ = Nothing
 
 instance FindCursor a (a ': as) where
-    _findCursor (c `HCons` cs) _ = getCursor c
+    findCursor (c `HCons` cs) _ = getCursor c
 
 instance (FindCursor a as) => FindCursor a (x ': as) where
-    _findCursor (c `HCons` cs) p = _findCursor cs p
+    findCursor (c `HCons` cs) p = findCursor cs p
 
 -- | New type to declare type level list of `Maybe (Cursor a)`.
 newtype MaybeCursor a = MaybeCursor { getCursor :: Maybe (Cursor a) }
@@ -221,39 +235,42 @@ newtype MaybeCursor a = MaybeCursor { getCursor :: Maybe (Cursor a) }
 -- | Declares method to convert result of a query into cursors.
 class (GraphFactory g) => RowParser g (as :: [*]) where
     -- | Parses a row and converts values into cursors in the order of given models.
-    _parseRow :: (WithDB db)
-              => Proxy as -- ^ List of model types deciding the type a value should be converted to.
-              -> [[SqlValue]] -- ^ Each element has obtained values of a table.
-              -> StateT g IO (HList MaybeCursor as) -- ^ Returns cursors. Nothing means no relation.
+    parseRow :: (WithDB db)
+             => Proxy as -- ^ List of model types deciding the type a value should be converted to.
+             -> [[(String, SqlValue)]] -- ^ Each element has obtained pairs of column name and value of a table.
+             -> StateT g IO (HList MaybeCursor as) -- ^ Returns cursors. Nothing means no relation.
 
 instance (GraphFactory g) => RowParser g '[] where
-    _parseRow _ _ = return HNil
+    parseRow _ _ = return HNil
 
 instance (RowParser g as, GraphContainer g a, RecordWrapper a) => RowParser g (a ': as) where
-    _parseRow _ (vs:values) = do
+    parseRow _ (vs:values) = do
         t <- liftIO $ readSchema $ getName (Proxy :: Proxy a)
-        c <- _rowToRecord t vs :: StateT g IO (Maybe (Cursor a))
-        cs <- _parseRow (Proxy :: Proxy as) values
+        c <- rowToRecord t vs :: StateT g IO (Maybe (Cursor a))
+        cs <- parseRow (Proxy :: Proxy as) values
         return $ MaybeCursor c `HCons` cs
 
 -- | Converts values in a row into a cursor of given table.
-_rowToRecord :: forall g a. (GraphContainer g a, RecordWrapper a)
-             => TableMeta -- ^ Table schema.
-             -> [SqlValue] -- ^ Values in a row.
-             -> StateT g IO (Maybe (Cursor a)) -- ^ Returns cursor. Nothing means all values are SqlNull.
-_rowToRecord t row
-    | L.all (SqlNull ==) row = return Nothing
+rowToRecord :: forall g a. (GraphContainer g a, RecordWrapper a)
+            => TableMeta -- ^ Table schema.
+            -> [(String, SqlValue)] -- ^ Pairs of column name and value in a row.
+            -> StateT g IO (Maybe (Cursor a)) -- ^ Returns cursor. Nothing means all values are SqlNull.
+rowToRecord t row
+    | L.all (\v -> SqlNull == snd v) row = return Nothing
     | otherwise = do
-        let v = newRecord row :: a
-        c <- _findInGraph t v
+        let values = let m = M.fromList row in map (m M.!) $ fieldNames (Proxy :: Proxy (RW'Type a))
+        let v = newRecord values :: a
+        c <- findInGraph t v
         return $ Just c
+    where
+        fks = map columnName $ filter (\c -> isJust $ relation c) (tableColumns t)
 
 -- | Searches a model which has the same primary key as given model, and if no model is found, inserts the model into the graph.
-_findInGraph :: (GraphContainer g a, RecordWrapper a, Monad m)
-             => TableMeta -- ^ Table schema.
-             -> a -- ^ Model to insert if the same model is not found.
-             -> StateT g m (Cursor a) -- ^ Returns the cursor to the model which is found or inserted.
-_findInGraph t v = do
+findInGraph :: (GraphContainer g a, RecordWrapper a, Monad m)
+            => TableMeta -- ^ Table schema.
+            -> a -- ^ Model to insert if the same model is not found.
+            -> StateT g m (Cursor a) -- ^ Returns the cursor to the model which is found or inserted.
+findInGraph t v = do
     c <- (?<<) match 
     case c of
         Just c' -> return c'
@@ -281,7 +298,7 @@ _selectQuery :: (FormattedCondition c, FormattedOrderBy o)
 _selectQuery cols t joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
         s = "SELECT " ++ L.intercalate ", " (L.concat cols)
-        f = " FROM " ++ t ++ " AS t0 " ++ L.intercalate " " (map show joins)
+        f = " FROM " ++ t ++ " AS t0 " ++ L.intercalate " " (filter (/= "") $ map show joins)
         w = let w' = whereClause conds
             in if w' == "" then "" else " WHERE " ++ w'
         o = let o' = orders sorts
@@ -296,28 +313,29 @@ columnsAndTables :: forall db g a. (WithDB db, GraphContainer g a, Selectable g 
 columnsAndTables graph p aliases = do
     let pts = Proxy :: Proxy (EdgeTypes g a)
     joins <- collectJoins (Proxy :: Proxy (CollectEdges '[a] (Edges g))) pts aliases
-    let columns = _selectColumns pts pts aliases
+    let columns = selectColumns pts pts aliases
     return ([cs ++ fksOfTable (map getJoin joins) i | (cs, i) <- zip columns [0..]], joins)
     where
-        fksOfTable :: [Join] -> Int -> [String]
-        fksOfTable (j:js) i = if leftIndex j == i
-                                then (leftAlias j ++ "." ++ leftColumn j) : fksOfTable js i
-                                else fksOfTable js i
+        fksOfTable :: [Maybe Join] -> Int -> [String]
+        fksOfTable (Just j:js) i = if leftIndex j == i
+                                    then (leftAlias j ++ "." ++ leftColumn j) : fksOfTable js i
+                                    else fksOfTable js i
+        fksOfTable (Nothing:js) i = fksOfTable js i
         fksOfTable [] i = []
 
 -- | Declares a method to collect column names of tables represented with types of models.
 class SelectColumns (as :: [*]) (ts :: [*]) where
     -- | Collects column names of tables in certain order.
-    _selectColumns :: Proxy as -- ^ Types of models.
-                   -> Proxy ts -- ^ Types of models determining the order of tables.
-                   -> [String] -- ^ Aliases of tables.
-                   -> [[String]] -- ^ Column names of tables arranged in the same order as the second argument.
+    selectColumns :: Proxy as -- ^ Types of models.
+                  -> Proxy ts -- ^ Types of models determining the order of tables.
+                  -> [String] -- ^ Aliases of tables.
+                  -> [[String]] -- ^ Column names of tables arranged in the same order as the second argument.
 
 instance SelectColumns '[] ts where
-    _selectColumns _ _ _ = []
+    selectColumns _ _ _ = []
 
 instance (RecordWrapper a, SelectColumns as ts, KnownNat (ElemIndex a ts)) => SelectColumns (a ': as) ts where
-    _selectColumns _ pts aliases = [(aliases !! i) ++ "." ++ c | c <- cols] : _selectColumns (Proxy :: Proxy as) pts aliases
+    selectColumns _ pts aliases = [(aliases !! i) ++ "." ++ c | c <- cols] : selectColumns (Proxy :: Proxy as) pts aliases
         where
             i = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a ts))
             cols = fieldNames (Proxy :: Proxy (RW'Type a))
@@ -353,11 +371,20 @@ instance (RecordWrapper a, RecordWrapper b, GraphContainer g (EdgeT a b rs), Kno
         let ia = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a as)) :: Int
         let ib = fromInteger $ natVal (Proxy :: Proxy (ElemIndex b as)) :: Int
         -- If no relations between the pair of tables, runtime error will occur.
-        -- TODO
+        -- TODO:
         -- Available relation between a pair of tables is just the first one.
         let (ca, r) = relationsTo ta (tableName tb) !! 0
         let j = Join ia ib (tableName ta) (aliases !! ia) (tableName tb) (aliases !! ib) ca (referenceColumn r)
-        return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy b) (Proxy :: Proxy rs) j
+        return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy b) (Proxy :: Proxy rs) (Just j)
+
+-- TODO:
+-- ExtraModel does not support join query, that is, it can't be a model of subquery.
+
+instance (GraphContainer g (EdgeT (ExtraModel xs) b rs), JoinTypeable rs, CursorFindable g t (ExtraModel xs) b) => EdgeToJoin g t (EdgeT (ExtraModel xs) b rs) as where
+    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy b) (Proxy :: Proxy rs) Nothing
+
+instance (GraphContainer g (EdgeT a (ExtraModel xs) rs), JoinTypeable rs, CursorFindable g t a (ExtraModel xs)) => EdgeToJoin g t (EdgeT a (ExtraModel xs) rs) as where
+    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy rs) Nothing
 
 -- ------------------------------------------------------------
 -- Type level functions.

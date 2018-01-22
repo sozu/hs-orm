@@ -68,6 +68,7 @@ data ModelRole = Select' -- ^ In updating operation, the model is used as just a
                | Insert' -- ^ Denotes this model will be inserted as a new record.
                | Update' -- ^ Denotes this model will update current record.
                          -- To determine which record should be update, this model must have an identifier column.
+               | Extra' -- ^ Denotes this model does not represent an existing table.
                deriving (Show)
 
 -- | A class to indicate the value of extensible field has the convertibility to and from SqlValue.

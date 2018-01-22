@@ -22,8 +22,10 @@ module Database.ORM.Record (
     , setFieldValue
     , resolveRelations
     , EdgeMap(..)
+    , AllRecord
 ) where
 
+import GHC.Exts
 import GHC.TypeLits
 import Data.Functor.Identity
 import Data.Monoid
@@ -90,7 +92,7 @@ instance (FieldNames xs, KnownSymbol n, Forall (KeyConstraint KnownSymbol) xs, F
 instance (FieldNames xs, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (ExtraModel xs) where
     type RW'Name (ExtraModel xs) = ""
     type RW'Type (ExtraModel xs) = xs
-    type RW'Role (ExtraModel xs) = 'Select'
+    type RW'Role (ExtraModel xs) = 'Extra'
     getRecord (ExtraModel r) = r
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
@@ -173,3 +175,8 @@ instance (GraphContainer g a, GraphContainer g b, RecordWrapper a, GraphContaine
 
 instance (GraphContainer g a, RecordWrapper a) => EdgeMap g (Graph x) a where
     mapEdges graph p _ f = []
+
+type family AllRecord (as :: [*]) :: Constraint where
+    AllRecord '[] = ()
+    AllRecord (a ': '[]) = RecordWrapper a
+    AllRecord (a ': as) = (RecordWrapper a, AllRecord as)
