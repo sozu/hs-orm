@@ -129,7 +129,7 @@ selectNodes pg pa conds sorts lo = do
     let w = formatCondition conds modelTypes aliases
     let o = formatOrderBy sorts modelTypes aliases
 
-    let q = selectQuery columns (getName pa) joins w o lo
+    let q = createSelectQuery columns (getName pa) joins w o lo
     let holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
 
     execSelect pg columns joins modelTypes q holder
@@ -285,15 +285,15 @@ findInGraph t v = do
 -- ------------------------------------------------------------
 
 -- | Create selecting query string.
-selectQuery :: (FormattedCondition c, FormattedOrderBy o)
-            => [[String]] -- ^ Qualified columns of tables.
-            -> String -- ^ Table name.
-            -> [JoinEdge g ms] -- ^ Join informations.
-            -> c -- ^ Conditions.
-            -> o -- ^ Sorting informations.
-            -> LimitOffset -- ^ Limit and offset values if needed.
-            -> String -- ^ Created query string.
-selectQuery cols t joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
+createSelectQuery :: (FormattedCondition c, FormattedOrderBy o)
+                  => [[String]] -- ^ Qualified columns of tables.
+                  -> String -- ^ Table name.
+                  -> [JoinEdge g ms] -- ^ Join informations.
+                  -> c -- ^ Conditions.
+                  -> o -- ^ Sorting informations.
+                  -> LimitOffset -- ^ Limit and offset values if needed.
+                  -> String -- ^ Created query string.
+createSelectQuery cols t joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
         s = "SELECT " ++ L.intercalate ", " (L.concat cols)
         f = " FROM " ++ t ++ " AS t0 " ++ L.intercalate " " (filter (/= "") $ map show joins)
@@ -355,6 +355,12 @@ instance Joins g '[] ms where
 instance (Joins g edges ms, EdgeForJoin g ms a b rs) => Joins g (EdgeT a b rs ': edges) ms where
     collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT a b rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
 
+-- Instances to bind instances of EdgeToJoin specialized for ExtraModel.
+instance (Joins g edges ms, EdgeForJoin g ms (ExtraModel xs) b rs) => Joins g (EdgeT (ExtraModel xs) b rs ': edges) ms where
+    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT (ExtraModel xs) b rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
+instance (Joins g edges ms, EdgeForJoin g ms a (ExtraModel xs) rs) => Joins g (EdgeT a (ExtraModel xs) rs ': edges) ms where
+    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT a (ExtraModel xs) rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
+
 -- | Declares a method to convert an edge to a join information.
 class EdgeToJoin g e (ms :: [*]) where
     -- | Converts an edge to a join information.
@@ -363,6 +369,9 @@ class EdgeToJoin g e (ms :: [*]) where
            -> Proxy ms -- ^ Types of models determining the order of tables.
            -> [String] -- ^ Aliases of tables.
            -> IO (JoinEdge g ms) -- ^ Join information.
+
+-- TODO:
+-- Multiple relations from a single model generate unintended query.
 
 instance (EdgeForJoin g ms a b rs) => EdgeToJoin g (EdgeT a b rs) ms where
     toJoin _ _ aliases = do
@@ -382,7 +391,6 @@ instance (EdgeForJoin g ms a b rs) => EdgeToJoin g (EdgeT a b rs) ms where
 
 instance (EdgeForJoin g ms (ExtraModel xs) b rs) => EdgeToJoin g (EdgeT (ExtraModel xs) b rs) ms where
     toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy b) (Proxy :: Proxy rs) Nothing
-
 instance (EdgeForJoin g ms a (ExtraModel xs) rs) => EdgeToJoin g (EdgeT a (ExtraModel xs) rs) ms where
     toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy rs) Nothing
 
