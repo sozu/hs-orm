@@ -103,7 +103,7 @@ type SelectNodes g a ms = (GraphContainer g a, RecordWrapper a, SelectColumns ms
 type family Head (as :: [*]) :: * where
     Head (a ': as) = a
 
-type Selectables g ms = (Joins g (CollectEdges ms (Edges g)) ms, RowParser g ms, FindCursor (Head ms) ms)
+type SelectQuery g ms = (Joins g (CollectEdges ms (Edges g)) ms, RowParser g ms, FindCursor (Head ms) ms)
 
 {- | Selects rows and constructs a graph of given type.
 
@@ -140,13 +140,14 @@ selectNodes pg pa conds sorts lo = do
     - Column expressions has the same columns as fileds of corresponding model except for foreign key columns.
     - To recever relationships between tables, foreign key column and referenced column must appear in column expressions.
     - The order of tables in column expression must the same as the order of types of models.
-select :: forall db g p ms. (WithDB db, Selectables g ms, GenerateColumns p ms)
-       => Proxy g
-       -> p ms
-       -> String
-       -> [SqlValue]
-       -> IO g
-select pg gc query holder = do
+-}
+selectQuery :: forall db g p ms. (WithDB db, SelectQuery g ms, GenerateColumns p ms)
+            => Proxy g
+            -> p ms
+            -> String
+            -> [SqlValue]
+            -> IO g
+selectQuery pg gc query holder = do
     context <- readIORef ?db
     let conn = connect context
 
@@ -156,7 +157,6 @@ select pg gc query holder = do
     -- TODO: 
     -- Enables appending values in column expressions to place holders.
     execSelect pg columns joins (Proxy :: Proxy ms) query holder
--}
 
 -- | Executes a query and constructs a graph holding obtained values.
 execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)

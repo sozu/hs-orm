@@ -112,7 +112,7 @@ _segment' n as = take n as : _segment' n (drop n as)
 
 -- | Creates insertion query.
 -- TODO:
--- This function assumes the RDBMS can deal with a query for the insertion of multiple records.
+-- This function assumes the RDBMS can deal with insertion query of multiple records.
 -- Some RDBMSs such as PostgreSQL or MySQL have the feature, but not all have it.
 _insertQuery :: TableMeta -- ^ Table schema.
              -> [String] -- ^ Column names to insert.

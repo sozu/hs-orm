@@ -23,6 +23,7 @@ import Database.ORM.Condition
 import Database.ORM.HDBC
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Query
 import Database.ORM.Select
 import Database.ORM.Utility
 import Database.ORM.Dialect.Mock
@@ -256,7 +257,121 @@ spec = do
                             view #cola ra `shouldBe` "aaa"
                 cb `shouldSatisfy` isNothing
 
+    describe "Add an edge to the graph" $ do
+        it "Edges between existing cursors" $ do
+            let mc c = MaybeCursor (Just c)
+
+            (_, g') <- flip runStateT (newGraph :: ABCDGraph) $ do
+                        a1 <- (+<<) (Model (#aid @= 1 <: #cola @= "a1" <: emptyRecord) :: A)
+                        b1 <- (+<<) (Model (#bid @= 1 <: #colb @= "b1" <: emptyRecord) :: B)
+                        c1 <- (+<<) (Model (#cid @= 1 <: #colc @= "c1" <: emptyRecord) :: C)
+                        d1 <- (+<<) (Model (#did @= 1 <: #cold @= "d1" <: emptyRecord) :: D)
+
+                        let cursors = mc a1 `HCons` mc b1 `HCons` mc c1 `HCons` mc d1 `HCons` HNil
+                        addEdge cursors (JoinEdge (Proxy :: Proxy B) (Proxy :: Proxy A) (Proxy :: Proxy '[]) Nothing)
+                        addEdge cursors (JoinEdge (Proxy :: Proxy C) (Proxy :: Proxy B) (Proxy :: Proxy '[]) Nothing)
+
+            length (values g' :: [B :- A]) `shouldBe` 1
+            length (values g' :: [C :- B]) `shouldBe` 1
+            length (values g' :: [D :- B]) `shouldBe` 0
+
+        it "Edge associated with missing cursor" $ do
+            let mc c = MaybeCursor (Just c)
+
+            (_, g') <- flip runStateT (newGraph :: ABCDGraph) $ do
+                        a1 <- (+<<) (Model (#aid @= 1 <: #cola @= "a1" <: emptyRecord) :: A)
+                        b1 <- (+<<) (Model (#bid @= 1 <: #colb @= "b1" <: emptyRecord) :: B)
+                        d1 <- (+<<) (Model (#did @= 1 <: #cold @= "d1" <: emptyRecord) :: D)
+
+                        let cursors = mc a1 `HCons` mc b1 `HCons` MaybeCursor Nothing `HCons` mc d1 `HCons` HNil
+                        addEdge cursors (JoinEdge (Proxy :: Proxy B) (Proxy :: Proxy A) (Proxy :: Proxy '[]) Nothing)
+                        addEdge cursors (JoinEdge (Proxy :: Proxy C) (Proxy :: Proxy B) (Proxy :: Proxy '[]) Nothing)
+
+            length (values g' :: [B :- A]) `shouldBe` 1
+            length (values g' :: [C :- B]) `shouldBe` 0
+
+    describe "Query creation" $ do
+        it "With all kinds of clauses" $ do
+            let c = cond @'[A] "#" "#.cola = ?" .& cond @'[C, D] "#" "#.cid = #.did * ?" .+ "aaa" .+ (2 :: Int)
+            let o = orderBy @B "bid" ASC ./ orderBy @D "did" DESC
+
+            q <- queryWithComponents c o (Just (5, 10))
+
+            q `shouldBe` "SELECT \
+                        \t0.aid, t0.cola, t1.bid, t1.colb, t1.b_a_id, t2.cid, t2.colc, t2.c_b_id, t3.did, t3.cold, t3.d_b_id \
+                        \FROM a AS t0 \
+                        \INNER JOIN b AS t1 ON t1.b_a_id = t0.aid \
+                        \INNER JOIN c AS t2 ON t2.c_b_id = t1.bid \
+                        \INNER JOIN d AS t3 ON t3.d_b_id = t1.bid \
+                        \WHERE (t0.cola = ?) AND (t2.cid = t3.did * ?) \
+                        \ORDER BY t1.bid ASC, t3.did DESC LIMIT ? OFFSET ?\
+                        \"
+
+        it "No conditions" $ do
+            let o = orderBy @B "bid" ASC ./ orderBy @D "did" DESC
+
+            q <- queryWithComponents (..?) o (Just (5, 10))
+
+            q `shouldBe` "SELECT \
+                        \t0.aid, t0.cola, t1.bid, t1.colb, t1.b_a_id, t2.cid, t2.colc, t2.c_b_id, t3.did, t3.cold, t3.d_b_id \
+                        \FROM a AS t0 \
+                        \INNER JOIN b AS t1 ON t1.b_a_id = t0.aid \
+                        \INNER JOIN c AS t2 ON t2.c_b_id = t1.bid \
+                        \INNER JOIN d AS t3 ON t3.d_b_id = t1.bid \
+                        \ORDER BY t1.bid ASC, t3.did DESC LIMIT ? OFFSET ?\
+                        \"
+
+        it "No orders" $ do
+            let c = cond @'[A] "#" "#.cola = ?" .& cond @'[C, D] "#" "#.cid = #.did * ?" .+ "aaa" .+ (2 :: Int)
+
+            q <- queryWithComponents c (../) (Just (5, 10))
+
+            q `shouldBe` "SELECT \
+                        \t0.aid, t0.cola, t1.bid, t1.colb, t1.b_a_id, t2.cid, t2.colc, t2.c_b_id, t3.did, t3.cold, t3.d_b_id \
+                        \FROM a AS t0 \
+                        \INNER JOIN b AS t1 ON t1.b_a_id = t0.aid \
+                        \INNER JOIN c AS t2 ON t2.c_b_id = t1.bid \
+                        \INNER JOIN d AS t3 ON t3.d_b_id = t1.bid \
+                        \WHERE (t0.cola = ?) AND (t2.cid = t3.did * ?) \
+                        \LIMIT ? OFFSET ?\
+                        \"
+
+        it "No limit and offset" $ do
+            let c = cond @'[A] "#" "#.cola = ?" .& cond @'[C, D] "#" "#.cid = #.did * ?" .+ "aaa" .+ (2 :: Int)
+            let o = orderBy @B "bid" ASC ./ orderBy @D "did" DESC
+
+            q <- queryWithComponents c o Nothing
+
+            q `shouldBe` "SELECT \
+                        \t0.aid, t0.cola, t1.bid, t1.colb, t1.b_a_id, t2.cid, t2.colc, t2.c_b_id, t3.did, t3.cold, t3.d_b_id \
+                        \FROM a AS t0 \
+                        \INNER JOIN b AS t1 ON t1.b_a_id = t0.aid \
+                        \INNER JOIN c AS t2 ON t2.c_b_id = t1.bid \
+                        \INNER JOIN d AS t3 ON t3.d_b_id = t1.bid \
+                        \WHERE (t0.cola = ?) AND (t2.cid = t3.did * ?) \
+                        \ORDER BY t1.bid ASC, t3.did DESC\
+                        \"
+
 headCursor :: HList MaybeCursor (a ': as)
            -> (Maybe (Cursor a), HList MaybeCursor as)
 headCursor (c `HCons` cs) = (getCursor c, cs)
-         
+
+queryWithComponents :: (ElemIndexes ts ABCD, ElemIndexes us ABCD)
+                    => Condition (ts :: [*])
+                    -> OrderBy (us :: [*])
+                    -> LimitOffset
+                    -> IO String
+queryWithComponents c o lo = do
+            r <- newResource mock
+            let ?resource = r
+            withContext $ do
+                let aliases = ["t0", "t1", "t2", "t3"]
+
+                (columns, joins) <- columnsAndTables (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy A) aliases
+
+                let q = createSelectQuery columns "a" joins
+                                            (formatCondition c (Proxy :: Proxy '[A, B, C, D]) aliases)
+                                            (formatOrderBy o (Proxy :: Proxy '[A, B, C, D]) aliases)
+                                            lo
+
+                return q

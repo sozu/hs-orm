@@ -95,6 +95,3 @@ class FormattedCondition c where
 instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
     whereClause (c, _) = c
     whereValues (_, vs) = map toSql vs
-
--- | Gets an empty condition.
-unconditional = [] :: [(String, [Int])]
