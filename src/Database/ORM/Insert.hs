@@ -47,7 +47,6 @@ columnsAndValues graph cs ta = do
     let foreigns = catMaybes $ mapEdges graph (Proxy :: Proxy a) (Proxy :: Proxy g) (resolveRelations ta) :: [(String, Cursor a -> Maybe SqlValue)]
 
     -- Gets list of cursors where each item is a list of pairs of column name and its value.
-    -- vs :: [[for cursor1 (col1, val1), (col2, val2), ...], [for cursor2 (,)....], ...]
     return $ flip map cs $ \c ->
                 -- Collects edges from a and concatenates fields of a model and foreign key columns of the edges.
                 let r = getRecord $ c @< graph
