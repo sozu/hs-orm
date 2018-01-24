@@ -7,6 +7,7 @@ module Database.ORM.Dialect.Mock (
 import qualified Data.Map as M
 import Data.Maybe (maybe)
 import Database.HDBC
+import Database.HDBC.Statement
 import qualified Database.ORM.HDBC as D
 
 data Mock = Mock { dbUrl :: D.DBURL
@@ -33,7 +34,15 @@ instance IConnection MockConnection where
     commit _ = return ()
     rollback _ = return ()
     run _ _ _ = return 0
-    prepare _ _ = return undefined
+    prepare _ q = return $ Statement { execute = (\_ -> return 0)
+                                     , executeRaw = (return ())
+                                     , executeMany = (\_ -> return ())
+                                     , finish = (return ())
+                                     , fetchRow = (return Nothing)
+                                     , getColumnNames = (return [])
+                                     , originalQuery = q
+                                     , describeResult = (return [])
+                                     }
     clone c = return c
     hdbcDriverName _ = "mockdb"
     hdbcClientVer _ = "0.0.0"
