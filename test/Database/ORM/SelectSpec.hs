@@ -57,8 +57,15 @@ type WithExtraGraph = ABCDGraph
                  :><: (Extra1 :- B)
                  :><: (Extra2 :- Extra1)
 
+type ABExtraGraph = Graph A
+                     :><: B
+                     :><: Extra1
+                     :><: Extra2
+                     :><: (B :- A)
+
 type ABCD = '[A, B, C, D]
 type WithExtra = '[A, B, C, D, Extra1, Extra2]
+type ABExtra = '[A, B, Extra1, Extra2]
 
 col :: Bool -> String -> Bool -> ColumnMeta
 col pk n auto = ColumnMeta pk n "" False auto Nothing
@@ -241,6 +248,33 @@ spec = do
                 let rd = getRecord (fromJust cd @< g) in do
                             view #did rd `shouldBe` (4 :: Int)
                             view #cold rd `shouldBe` "ddd"
+
+        it "Extras exist" $ do
+            r <- newResource mock
+            let ?resource = r
+            withContext $ do
+                (cursors, g) <- flip runStateT (newGraph :: ABExtraGraph) $ do
+                                    parseRow (Proxy :: Proxy ABExtra) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
+                                                                      , [("bid", toSql (2 :: Int)), ("colb", toSql "bbb"), ("b_a_id", toSql (1 :: Int))]
+                                                                      , [("a", toSql (3 :: Int)), ("b", toSql "ccc")]
+                                                                      , [("c", toSql (4 :: Int)), ("d", toSql "ddd")]
+                                                                      ]
+                let (ca, cs1) = headCursor cursors
+                let (cb, cs2) = headCursor cs1
+                let (cc, cs3) = headCursor cs2
+                let (cd, _) = headCursor cs3
+                let ra = getRecord (fromJust ca @< g) in do
+                            view #aid ra `shouldBe` (1 :: Int)
+                            view #cola ra `shouldBe` "aaa"
+                let rb = getRecord (fromJust cb @< g) in do
+                            view #bid rb `shouldBe` (2 :: Int)
+                            view #colb rb `shouldBe` "bbb"
+                let rc = getRecord (fromJust cc @< g) in do
+                            view #a rc `shouldBe` (3 :: Int)
+                            view #b rc `shouldBe` "ccc"
+                let rd = getRecord (fromJust cd @< g) in do
+                            view #c rd `shouldBe` (4 :: Int)
+                            view #d rd `shouldBe` "ddd"
 
         it "Contain null" $ do
             r <- newResource mock

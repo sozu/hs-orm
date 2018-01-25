@@ -18,22 +18,25 @@ import GHC.Exts
 import GHC.TypeLits
 import Data.Convertible
 import Database.HDBC
+import Database.ORM.Query
 import Database.ORM.Record
 import Database.ORM.Utility
 
 data Condition (ts :: [*]) = Condition [String] (Proxy ts) [SqlValue]
 
 -- cond @'[@A.Model, B.Model] "??" "3 * ??.val < 7 + ??.d"
-cond :: forall ts. (AllRecord (ts :: [*]))
+cond :: forall ts. (AllRecord (ts :: [*]), KnownNat (Length ts))
      => String
      -> String
      -> Condition ts
-cond rep fmt = Condition (split fmt) (Proxy :: Proxy ts) []
+cond rep fmt = Condition (split fmt len) (Proxy :: Proxy ts) []
     where
-        split s 
+        len = natVal (Proxy :: Proxy (Length ts))
+        split s n
             | s == "" = [""]
-            | L.isPrefixOf rep s = "" : split (drop (length rep) s)
-            | otherwise = let (v:vs) = split (tail s) in (head s:v) : vs
+            | n == 0 = [s]
+            | L.isPrefixOf rep s = "" : split (drop (length rep) s) (n-1)
+            | otherwise = let (v:vs) = split (tail s) n in (head s:v) : vs
 
 (..?) :: Condition '[]
 (..?) = cond @'[] "" ""
@@ -95,3 +98,131 @@ class FormattedCondition c where
 instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
     whereClause (c, _) = c
     whereValues (_, vs) = map toSql vs
+
+-- ------------------------------------------------------------
+-- Functions creating simple conditions.
+-- ------------------------------------------------------------
+
+-- | Is a column equal to a value?
+-- > col = v
+(==?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- ^ A value.
+      -> Condition '[t] -- ^ Condition.
+(==?) col v = cond @'[t] "#" ("#." ++ col ++ " = ?") .+ v
+
+-- | Is not a column equal to a value?
+-- > col != v
+(!=?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- ^ A value.
+      -> Condition '[t] -- ^ Condition.
+(!=?) col v = cond @'[t] "#" ("#." ++ col ++ " != ?") .+ v
+
+-- | Is a column smaller than a value?
+-- > col < v
+(<?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+     => String -- ^ Column name.
+     -> a -- ^ A value.
+     -> Condition '[t] -- ^ Condition.
+(<?) col v = cond @'[t] "#" ("#." ++ col ++ " < ?") .+ v
+
+-- | Is a column larger than a value?
+-- > col > v
+(>?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+     => String -- ^ Column name.
+     -> a -- ^ A value.
+     -> Condition '[t] -- ^ Condition.
+(>?) col v = cond @'[t] "#" ("#." ++ col ++ " > ?") .+ v
+
+-- | Is a column smaller than or equal to a value?
+-- > col <= v
+(<=?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- A value.
+      -> Condition '[t] -- ^ Condition.
+(<=?) col v = cond @'[t] "#" ("#." ++ col ++ " <= ?") .+ v
+
+-- | Is a column larger than or equal to a value?
+-- > col >= v
+(>=?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- A value.
+      -> Condition '[t] -- ^ Condition.
+(>=?) col v = cond @'[t] "#" ("#." ++ col ++ " >= ?") .+ v
+
+-- | Is a column value included in values?
+-- > col IN (v1, v2, ...)
+(=@?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> [a] -- ^ Values.
+      -> Condition '[t] -- ^ Condition.
+(=@?) col [] = cond @'[t] "#" "FALSE"
+(=@?) col vs = foldl (.+) (cond @'[t] "#" ("#." ++ col ++ " IN (" ++ holder (length vs) ++ ")")) vs
+
+-- | Is not a column value included in values?
+-- > col NOT IN (v1, v2, ...)
+(!@?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> [a] -- ^ Values.
+      -> Condition '[t] -- ^ Condition.
+(!@?) col [] = cond @'[t] "#" "TRUE"
+(!@?) col vs = foldl (.+) (cond @'[t] "#" ("#." ++ col ++ " NOT IN (" ++ holder (length vs) ++ ")")) vs
+
+-- | Escapes a string to be used in LIKE operation.
+escapeLike :: String -- ^ A string.
+           -> String -- ^ Escaped string.
+escapeLike "" = ""
+escapeLike ('_':cs) = '\\' : '_' : escapeLike cs
+escapeLike ('%':cs) = '\\' : '%' : escapeLike cs
+escapeLike ('\\':cs) = '\\' : '\\' : escapeLike cs
+
+-- | Does a column matches to a pattern?
+-- > col LIKE "pattern"
+(~=?) :: forall t. (RecordWrapper t)
+      => String -- ^ Column name.
+      -> String -- ^ A pattern.
+      -> Condition '[t] -- ^ Condition.
+(~=?) col p = cond @'[t] "#" ("#." ++ col ++ " LIKE ?") .+ p
+
+-- | Does a column has a substring?
+-- > col LIKE "%pattern%"
+(~@?) :: forall t. (RecordWrapper t)
+      => String -- ^ Column name.
+      -> String -- ^ A substring.
+      -> Condition '[t] -- ^ Condition.
+(~@?) col p = cond @'[t] "#" ("#." ++ col ++ " LIKE ?") .+ ('%' : reverse ('%' : reverse (escapeLike p)))
+
+-- | Does a column has a prefix?
+-- > col LIKE "prefix%"
+(~^?) :: forall t. (RecordWrapper t)
+      => String -- ^ Column name.
+      -> String -- ^ A prefix.
+      -> Condition '[t] -- ^ Condition.
+(~^?) col p = cond @'[t] "#" ("#." ++ col ++ " LIKE ?") .+ reverse ('%' : reverse (escapeLike p))
+
+-- | Does a column has a suffix?
+-- > col LIKE "%suffix"
+(~$?) :: forall t. (RecordWrapper t)
+      => String -- ^ Column name.
+      -> String -- ^ A suffix.
+      -> Condition '[t] -- ^ Condition.
+(~$?) col p = cond @'[t] "#" ("#." ++ col ++ " LIKE ?") .+ ('%' : escapeLike p)
+
+-- | Is a column between values?
+-- > col BETWEEN l AND r
+(><?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- ^ Smaller value.
+      -> a -- ^ Larger value.
+      -> Condition '[t] -- ^ Condition.
+(><?) col l r = cond @'[t] "#" ("#." ++ col ++ " BETWEEN ? AND ?") .+ l .+ r
+
+-- | Is not a column between values?
+-- > col NOT BETWEEN l AND r
+(<>?) :: forall t a. (RecordWrapper t, Convertible a SqlValue)
+      => String -- ^ Column name.
+      -> a -- ^ Smaller value.
+      -> a -- ^ Larger value.
+      -> Condition '[t] -- ^ Condition.
+(<>?) col l r = cond @'[t] "#" ("#." ++ col ++ " NOT BETWEEN ? AND ?") .+ l .+ r
