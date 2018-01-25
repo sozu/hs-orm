@@ -369,7 +369,7 @@ queryWithComponents c o lo = do
 
                 (columns, joins) <- columnsAndTables (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy A) aliases
 
-                let q = createSelectQuery columns "a" joins
+                let q = createSelectQuery columns ("a", "t0") joins
                                             (formatCondition c (Proxy :: Proxy '[A, B, C, D]) aliases)
                                             (formatOrderBy o (Proxy :: Proxy '[A, B, C, D]) aliases)
                                             lo

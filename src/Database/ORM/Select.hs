@@ -30,7 +30,7 @@ import Control.Applicative
 import Control.Monad.State
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (maybe, isJust)
+import Data.Maybe (maybe, isJust, fromJust)
 import Data.Convertible
 import Data.IORef
 import Data.Proxy
@@ -82,12 +82,26 @@ instance Show (JoinEdge g ms) where
                     LeftJoinType -> "LEFT JOIN "
                     RightJoinType -> "RIGHT JOIN "
 
+joinCondition :: JoinEdge g ms
+              -> Maybe String
+joinCondition (JoinEdge _ _ _ Nothing) = Nothing
+joinCondition (JoinEdge _ _ _ (Just j)) = Just $ leftAlias j ++ "." ++ leftColumn j ++ " = " ++ rightAlias j ++ "." ++ rightColumn j
+
+arrangeJoins :: ([JoinEdge g ms], [JoinEdge g ms])
+             -> [String]
+             -> ([JoinEdge g ms], [JoinEdge g ms])
+arrangeJoins (ls, rs) ts = if length ls' == 0
+                            then (ls, rs)
+                            else arrangeJoins (ls ++ ls', rs') (map (rightTable . fromJust . getJoin) ls')
+    where
+        (ls', rs') = L.partition (\j -> maybe False (`elem` ts) (leftTable <$> getJoin j)) rs
+
 -- ------------------------------------------------------------
 -- Select functions.
 -- ------------------------------------------------------------
 
 -- | Arranged model types in graph `g` collected by tracing edges from model `a`.
-type EdgeTypes g a = ArrangeEdgeTypes (CollectEdges '[a] (Edges g))
+type EdgeTypes g a = AddSet a (ArrangeEdgeTypes (CollectEdges '[a] (Edges g)))
 
 {- | A constraint to show the model `a` can be a selecting entry from the graph `g`.
 
@@ -98,7 +112,7 @@ type EdgeTypes g a = ArrangeEdgeTypes (CollectEdges '[a] (Edges g))
     - The cursor of model `a` can be found from cursors of arranged model types.
     They are needed just for the compilation and fulfilled requisitely in typical use of this library. 
 -}
-type SelectNodes g a ms = (GraphContainer g a, RecordWrapper a, SelectColumns ms ms, Joins g (CollectEdges '[a] (Edges g)) ms, RowParser g ms, FindCursor a ms)
+type SelectNodes g a ms = (GraphContainer g a, RecordWrapper a, SelectColumns ms ms, Joins g (CollectEdges '[a] (Edges g)) ms, RowParser g ms, FindCursor a ms, KnownNat (ElemIndex a (EdgeTypes g a)))
 
 type family Head (as :: [*]) :: * where
     Head (a ': as) = a
@@ -129,7 +143,9 @@ selectNodes pg pa conds sorts lo = do
     let w = formatCondition conds modelTypes aliases
     let o = formatOrderBy sorts modelTypes aliases
 
-    let q = createSelectQuery columns (getName pa) joins w o lo
+    let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a (EdgeTypes g a)))
+
+    let q = createSelectQuery columns (getName pa, aliases !! index) joins w o lo
     let holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
 
     execSelect pg columns joins modelTypes q holder
@@ -287,16 +303,16 @@ findInGraph t v = do
 -- | Create selecting query string.
 createSelectQuery :: (FormattedCondition c, FormattedOrderBy o)
                   => [[String]] -- ^ Qualified columns of tables.
-                  -> String -- ^ Table name.
+                  -> (String, String) -- ^ Top table name and its alias.
                   -> [JoinEdge g ms] -- ^ Join informations.
                   -> c -- ^ Conditions.
                   -> o -- ^ Sorting informations.
                   -> LimitOffset -- ^ Limit and offset values if needed.
                   -> String -- ^ Created query string.
-createSelectQuery cols t joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
+createSelectQuery cols (t, alias) joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
         s = "SELECT " ++ L.intercalate ", " (L.concat cols)
-        f = " FROM " ++ t ++ " AS t0 " ++ L.intercalate " " (filter (/= "") $ map show joins)
+        f = " FROM " ++ t ++ " AS " ++ alias ++ " " ++ L.intercalate " " (filter (/= "") $ map show joins)
         w = let w' = whereClause conds
             in if w' == "" then "" else " WHERE " ++ w'
         o = let o' = orders sorts
@@ -369,9 +385,6 @@ class EdgeToJoin g e (ms :: [*]) where
            -> Proxy ms -- ^ Types of models determining the order of tables.
            -> [String] -- ^ Aliases of tables.
            -> IO (JoinEdge g ms) -- ^ Join information.
-
--- TODO:
--- Multiple relations from a single model generate unintended query.
 
 instance (EdgeForJoin g ms a b rs) => EdgeToJoin g (EdgeT a b rs) ms where
     toJoin _ _ aliases = do
