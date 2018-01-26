@@ -13,10 +13,10 @@ import Database.ORM.Condition
 import Database.ORM.Model
 import Database.ORM.Utility
 
-type Extra1 = ExtraModel '["a" :> Int, "b" :> String]
-type Extra2 = ExtraModel '["c" :> Int, "d" :> String]
-type Extra3 = ExtraModel '["e" :> Int, "f" :> String]
-type Extra4 = ExtraModel '["g" :> Int, "h" :> String]
+type Extra1 = ExtraModel '["a" :> Int, "b" :> String] '[]
+type Extra2 = ExtraModel '["c" :> Int, "d" :> String] '[]
+type Extra3 = ExtraModel '["e" :> Int, "f" :> String] '[]
+type Extra4 = ExtraModel '["g" :> Int, "h" :> String] '[]
 
 sqlVal :: Int -> SqlValue
 sqlVal i = convert i :: SqlValue

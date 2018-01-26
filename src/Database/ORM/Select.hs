@@ -372,10 +372,10 @@ instance (Joins g edges ms, EdgeForJoin g ms a b rs) => Joins g (EdgeT a b rs ':
     collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT a b rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
 
 -- Instances to bind instances of EdgeToJoin specialized for ExtraModel.
-instance (Joins g edges ms, EdgeForJoin g ms (ExtraModel xs) b rs) => Joins g (EdgeT (ExtraModel xs) b rs ': edges) ms where
-    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT (ExtraModel xs) b rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
-instance (Joins g edges ms, EdgeForJoin g ms a (ExtraModel xs) rs) => Joins g (EdgeT a (ExtraModel xs) rs ': edges) ms where
-    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT a (ExtraModel xs) rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
+instance (Joins g edges ms, EdgeForJoin g ms (ExtraModel xs as) b rs) => Joins g (EdgeT (ExtraModel xs as) b rs ': edges) ms where
+    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT (ExtraModel xs as) b rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
+instance (Joins g edges ms, EdgeForJoin g ms a (ExtraModel xs as) rs) => Joins g (EdgeT a (ExtraModel xs as) rs ': edges) ms where
+    collectJoins _ p aliases = (:) <$> toJoin (Proxy :: Proxy (EdgeT a (ExtraModel xs as) rs)) p aliases <*> collectJoins (Proxy :: Proxy edges) p aliases
 
 -- | Declares a method to convert an edge to a join information.
 class EdgeToJoin g e (ms :: [*]) where
@@ -402,10 +402,10 @@ instance (EdgeForJoin g ms a b rs) => EdgeToJoin g (EdgeT a b rs) ms where
 -- TODO:
 -- ExtraModel does not support join query, that is, it can't be a model of subquery.
 
-instance (EdgeForJoin g ms (ExtraModel xs) b rs) => EdgeToJoin g (EdgeT (ExtraModel xs) b rs) ms where
-    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy b) (Proxy :: Proxy rs) Nothing
-instance (EdgeForJoin g ms a (ExtraModel xs) rs) => EdgeToJoin g (EdgeT a (ExtraModel xs) rs) ms where
-    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy (ExtraModel xs)) (Proxy :: Proxy rs) Nothing
+instance (EdgeForJoin g ms (ExtraModel xs as) b rs) => EdgeToJoin g (EdgeT (ExtraModel xs as) b rs) ms where
+    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy (ExtraModel xs as)) (Proxy :: Proxy b) (Proxy :: Proxy rs) Nothing
+instance (EdgeForJoin g ms a (ExtraModel xs as) rs) => EdgeToJoin g (EdgeT a (ExtraModel xs as) rs) ms where
+    toJoin _ _ _ = return $ JoinEdge (Proxy :: Proxy a) (Proxy :: Proxy (ExtraModel xs as)) (Proxy :: Proxy rs) Nothing
 
 -- ------------------------------------------------------------
 -- Type level functions.

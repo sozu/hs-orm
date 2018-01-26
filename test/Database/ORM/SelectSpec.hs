@@ -28,10 +28,10 @@ import Database.ORM.Select
 import Database.ORM.Utility
 import Database.ORM.Dialect.Mock
 
-type Extra1 = ExtraModel '["a" :> Int, "b" :> String]
-type Extra2 = ExtraModel '["c" :> Int, "d" :> String]
-type Extra3 = ExtraModel '["e" :> Int, "f" :> String]
-type Extra4 = ExtraModel '["g" :> Int, "h" :> String]
+type Extra1 = ExtraModel '["a" :> Int, "b" :> String] '[]
+type Extra2 = ExtraModel '["c" :> Int, "d" :> String] '[]
+type Extra3 = ExtraModel '["e" :> Int, "f" :> String] '[]
+type Extra4 = ExtraModel '["g" :> Int, "h" :> String] '[]
 
 
 type A = "a" :## Record '["aid" :> Int, "cola" :> String]

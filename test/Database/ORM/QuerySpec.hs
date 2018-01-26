@@ -11,8 +11,8 @@ import Database.ORM.Query
 import Database.ORM.Model
 import Database.ORM.Utility
 
-type Extra1 = ExtraModel '["a" :> Int, "b" :> String]
-type Extra2 = ExtraModel '["c" :> Int, "d" :> String]
+type Extra1 = ExtraModel '["a" :> Int, "b" :> String] '[]
+type Extra2 = ExtraModel '["c" :> Int, "d" :> String] '[]
 
 spec :: Spec
 spec = do

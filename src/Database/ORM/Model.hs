@@ -29,6 +29,8 @@
     > type SomeReference = "some_table" :## Record (Columns ^@ ["id"])
     > type SomeInsert = "some_table" :++ Record Columns
     > type SomeUpdate = "some_table" :// Record (Columns ^- ["created_at"])
+
+    > type SomeInsert = "some_table" :++ Record Columns
 -}
 module Database.ORM.Model (
     (:##), (:++), (://)
@@ -56,11 +58,11 @@ import Database.HDBC
 -- ------------------------------------------------------------
 
 -- | Defines a model type used to select records or indicate referenced record.
-type n :## m = TableModel n Select' m
+type n :## m = TableModel n Select' m '[]
 -- | Defines a model type used to insert a record.
-type n :++ m = TableModel n Insert' m
+type n :++ m = TableModel n Insert' m '[]
 -- | Defines a model type used to update a record.
-type n :// m = TableModel n Update' m
+type n :// m = TableModel n Update' m '[]
 
 -- | This type specifies in the operation type a model should be used.
 data ModelRole = Select' -- ^ In updating operation, the model is used as just a reference for foreign key column.
@@ -77,19 +79,19 @@ instance (Eq v, Convertible v SqlValue, Convertible SqlValue v) => SqlValueConst
 
 -- | Data model representing a record of a table.
 -- n is a name of the table and r denotes the operation this model should be used.
-data TableModel (n :: Symbol) (r :: ModelRole) m :: * where {
+data TableModel (n :: Symbol) (r :: ModelRole) m (as :: [*]) :: * where {
     -- | Data constructor of a model.
     Model :: (Forall (KeyValue KnownSymbol SqlValueConstraint) xs)
           => Record xs -- ^ An extensitble record where each field corresponds a column.
-          -> TableModel n r (Record xs) -- ^ Created model.
+          -> TableModel n r (Record xs) as -- ^ Created model.
 }
 
-deriving instance (Show m) => Show (TableModel (n :: Symbol) (r :: ModelRole) m)
+deriving instance (Show m) => Show (TableModel (n :: Symbol) (r :: ModelRole) m as)
 
 -- | This type is prepared for dynamically calculated values except for columns by query.
 -- Aggregation operations of grouped records will generate those values (ex. COUNT).
 -- By adding ExtraModel into a graph, those values can be obtained in the same way as TableModel.
-newtype ExtraModel (xs :: [Assoc Symbol *]) = ExtraModel { extra :: Record xs }
+newtype ExtraModel (xs :: [Assoc Symbol *]) (as :: [*]) = ExtraModel { extra :: Record xs }
 
 -- | Declares methods to define if the instance model should accept each operation.
 class ForWhat m where
@@ -98,13 +100,13 @@ class ForWhat m where
     forUpdate :: m -> Bool
     forUpdate _ = False
 
-instance ForWhat (TableModel n r m) where
-instance ForWhat (TableModel n Insert' m) where
+instance ForWhat (TableModel n r m as) where
+instance ForWhat (TableModel n Insert' m as) where
     forInsert _ = True
-instance ForWhat (TableModel n Update' m) where
+instance ForWhat (TableModel n Update' m as) where
     forUpdate _ = True
 
-instance ForWhat (ExtraModel xs) where
+instance ForWhat (ExtraModel xs as) where
     forInsert _ = False
     forUpdate _ = False
 

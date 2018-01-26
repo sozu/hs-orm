@@ -36,6 +36,11 @@ import Data.Model.Graph
 import Database.HDBC
 import Database.ORM.HDBC
 import Database.ORM.Model
+import Database.ORM.Utility
+
+-- ------------------------------------------------------------
+-- Records.
+-- ------------------------------------------------------------
 
 -- | This class is introduces to declare the constraint just for the key of extensible record.
 class (pk (AssocKey kv)) => KeyConstraint pk kv where
@@ -80,23 +85,27 @@ instance FieldNames '[] where
 instance (KnownSymbol k, FieldNames as) => FieldNames ((k :> v) ': as) where
     fieldNames _ = symbolVal (Proxy :: Proxy k) : fieldNames (Proxy :: Proxy as)
 
-instance (FieldNames xs, KnownSymbol n, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (TableModel n r (Record xs)) where
-    type RW'Name (TableModel n r (Record xs)) = n
-    type RW'Type (TableModel n r (Record xs)) = xs
-    type RW'Role (TableModel n r (Record xs)) = r
+instance (FieldNames xs, KnownSymbol n, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (TableModel n r (Record xs) as) where
+    type RW'Name (TableModel n r (Record xs) as) = n
+    type RW'Type (TableModel n r (Record xs) as) = xs
+    type RW'Role (TableModel n r (Record xs) as) = r
     getRecord (Model m) = m
     updateRecord (Model m) v = Model v
     newRecord vs = Model $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                             $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
 
-instance (FieldNames xs, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (ExtraModel xs) where
-    type RW'Name (ExtraModel xs) = ""
-    type RW'Type (ExtraModel xs) = xs
-    type RW'Role (ExtraModel xs) = 'Extra'
+instance (FieldNames xs, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (ExtraModel xs as) where
+    type RW'Name (ExtraModel xs as) = ""
+    type RW'Type (ExtraModel xs as) = xs
+    type RW'Role (ExtraModel xs as) = 'Extra'
     getRecord (ExtraModel r) = r
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                                 $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
+
+-- ------------------------------------------------------------
+-- Fields.
+-- ------------------------------------------------------------
 
 -- | Get names of fields from an extensible record.
 -- The order of fields in returned list is same as the definition of the record.
@@ -134,6 +143,10 @@ setFieldValue r n value = htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol Sql
                                     in if symbolVal (proxyAssocKey f) == n
                                         then Field $ pure (fromSql value)
                                         else f
+
+-- ------------------------------------------------------------
+-- Relations.
+-- ------------------------------------------------------------
 
 -- | Gets relation informations of an edge in the graph.
 resolveRelations :: forall a b g. (GraphContainer g a, GraphContainer g b, GraphContainer g (Edge a b), RecordWrapper a, RecordWrapper b)
@@ -180,3 +193,43 @@ type family AllRecord (as :: [*]) :: Constraint where
     AllRecord '[] = ()
     AllRecord (a ': '[]) = RecordWrapper a
     AllRecord (a ': as) = (RecordWrapper a, AllRecord as)
+
+-- ------------------------------------------------------------
+-- Identities.
+-- ------------------------------------------------------------
+
+class (RecordWrapper a, ReadSymbols (RW'Key a)) => Identifiable a where
+    type RW'Key a :: [Symbol]
+    type RW'KeyTypes a :: [*]
+
+    getKeyNames :: proxy a
+                -> [String]
+    getKeyNames p = readSymbols (Proxy :: Proxy (RW'Key a))
+
+class ReadSymbols rs where
+    readSymbols :: proxy rs
+                -> [String]
+
+instance ReadSymbols '[] where
+    readSymbols _ = []
+
+instance (KnownSymbol a, ReadSymbols as) => ReadSymbols (a ': as :: [Symbol]) where
+    readSymbols _ = symbolVal (Proxy :: Proxy a) : readSymbols (Proxy :: Proxy as)
+
+data PK (pk :: [Symbol])
+
+instance (RecordWrapper (TableModel n r m as), ReadSymbols (FindPK as)) => Identifiable (TableModel n r m as) where
+    type RW'Key (TableModel n r m as) = FindPK as
+    type RW'KeyTypes (TableModel n r m as) = FindFieldTypes (FindPK as) (RW'Type (TableModel n r m as))
+
+type family FindPK (as :: [*]) :: [Symbol] where
+    FindPK (PK pk ': as) = pk
+    FindPK (a ': as) = FindPK as
+
+type family FindFieldTypes (ss :: [Symbol]) (fs :: [Assoc Symbol *]) :: [*] where
+    FindFieldTypes '[] _ = '[]
+    FindFieldTypes (s ': ss) fs = FindFieldType s fs ': FindFieldTypes ss fs
+
+type family FindFieldType (s :: Symbol) (fs :: [Assoc Symbol *]) :: * where
+    FindFieldType s ('(:>) s t ': fs) = t
+    FindFieldType s (f ': fs) = FindFieldType s fs
