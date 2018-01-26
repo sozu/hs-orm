@@ -61,8 +61,12 @@ spec :: Spec
 spec = do
     describe "Create insert query" $ do
         it "Multiple records" $ do
-            let q = insertQuery (TableMeta "table" []) ["col1", "col2"] 5
-            q `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
+            r <- newResource mock
+            let ?resource = r
+            withContext $ do
+                d <- getDialect
+                let q = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] 5
+                q `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
 
     describe "Swap values of auto incremental column" $ do
         it "Auto incremental PK" $ do

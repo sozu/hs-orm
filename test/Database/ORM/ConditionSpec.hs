@@ -55,3 +55,60 @@ spec = do
                     vs `shouldBe` [sqlVal 3, sqlVal 4, sqlVal 1, sqlVal 2]
             let s = formatCondition c (Proxy :: Proxy '[Extra4, Extra3, Extra2, Extra1]) ["t4", "t3", "t2", "t1"]
             fst s `shouldBe` "(t3.col3 * ? < t4.col4 * ?) AND ((t1.col1 = ?) OR (t2.col2 = ?))"
+
+    describe "Simple condition functions" $ do
+        it "Equal" $ do
+            let c = (==?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b = ?", [toSql "abc"])
+
+        it "Not equal" $ do
+            let c = (!=?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b != ?", [toSql "abc"])
+
+        it "Smaller" $ do
+            let c = (<?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b < ?", [toSql "abc"])
+
+        it "Larger" $ do
+            let c = (>?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b > ?", [toSql "abc"])
+
+        it "Smaller or equal to" $ do
+            let c = (<=?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b <= ?", [toSql "abc"])
+
+        it "Larger or equal to" $ do
+            let c = (>=?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b >= ?", [toSql "abc"])
+
+        it "In" $ do
+            let c = (=@?) @Extra1 "b" ["abc", "def"]
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b IN (?, ?)", [toSql "abc", toSql "def"])
+
+        it "Not in" $ do
+            let c = (!@?) @Extra1 "b" ["abc", "def"]
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b NOT IN (?, ?)", [toSql "abc", toSql "def"])
+
+        it "Pattern" $ do
+            let c = (~=?) @Extra1 "b" "_abc%def_"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b LIKE ?", [toSql "_abc%def_"])
+
+        it "Substring" $ do
+            let c = (~@?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b LIKE ?", [toSql "%abc%"])
+
+        it "Prefix" $ do
+            let c = (~^?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b LIKE ?", [toSql "abc%"])
+
+        it "Suffix" $ do
+            let c = (~$?) @Extra1 "b" "abc"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b LIKE ?", [toSql "%abc"])
+
+        it "Between" $ do
+            let c = (><?) @Extra1 "b" "abc" "def"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b BETWEEN ? AND ?", [toSql "abc", toSql "def"])
+
+        it "Not between" $ do
+            let c = (<>?) @Extra1 "b" "abc" "def"
+            formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b NOT BETWEEN ? AND ?", [toSql "abc", toSql "def"])

@@ -18,16 +18,17 @@ data MockConnection = MockConnection
 
 instance D.DBSettings Mock where
     type ConnectionType Mock = MockConnection
-    type SchemaReaderType Mock = SchemaReader
+    type DialectType Mock = Dialect
     url = dbUrl
     maxConnections _ = 1
     open = open
-    schemaReader s = SchemaReader s
+    dialect s = Dialect s
 
-data SchemaReader = SchemaReader Mock
+data Dialect = Dialect Mock
 
-instance D.SchemaReader SchemaReader where
-    readTableMeta (SchemaReader s) t = return $ maybe (D.TableMeta t []) id $ M.lookup t (tables s)
+instance D.Dialect Dialect where
+    readTableMeta (Dialect s) t = return $ maybe (D.TableMeta t []) id $ M.lookup t (tables s)
+    readLatestSequences _ _ _ = return []
 
 instance IConnection MockConnection where
     disconnect _ = return ()

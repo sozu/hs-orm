@@ -22,7 +22,8 @@ module Database.ORM.HDBC (
     , Relation(..)
     , getColumn
     , relationsTo
-    , SchemaReader(..)
+    , Dialect(..)
+    , getDialect
 ) where
 
 import Control.Monad.IO.Class
@@ -45,14 +46,14 @@ type DBURL = String
 Each instance of this class corresponds to an RDBMS such as MySQL, PostgreSQL and so on.
 Developers can declare additional fields to handle vendor specific features prepared for connections.
 -}
-class (IConnection (ConnectionType db), SchemaReader (SchemaReaderType db)) => DBSettings db where
+class (IConnection (ConnectionType db), Dialect (DialectType db)) => DBSettings db where
     {- | Returns the type of connection. The constraint forces it to implement Database.HDBC.IConnection.
     -}
     type ConnectionType db :: *
 
-    {- | Returns the type of SchemaReader for the RDBMS which reads table schemas.
+    {- | Returns the type of Dialect for the RDBMS which reads table schemas.
     -}
-    type SchemaReaderType db :: *
+    type DialectType db :: *
 
     {- | Create an URL to connect database from settings.
     -}
@@ -70,10 +71,10 @@ class (IConnection (ConnectionType db), SchemaReader (SchemaReaderType db)) => D
                    -> Int -- The maximum number of connections.
     maxConnections _ = 10
 
-    {- | Create a SchemaReader to raed table schema.
+    {- | Create a Dialect to raed table schema.
     -}
-    schemaReader :: db -- ^ Connection settings.
-                 -> (SchemaReaderType db) -- ^ SchemaReader.
+    dialect :: db -- ^ Connection settings.
+            -> (DialectType db) -- ^ Dialect.
 
 {- | DBResource manages connection pool of a database specified by settings record.
 
@@ -150,7 +151,7 @@ readSchema t = do
     case M.lookup t (schema res) of
         Just tm -> return tm
         Nothing -> do
-            tm <- readTableMeta (schemaReader (settings res)) t
+            tm <- readTableMeta (dialect (settings res)) t
             saveSchema t tm
             return tm
 
@@ -163,20 +164,48 @@ saveSchema :: (WithResource db)
 saveSchema t meta = modifyIORef ?resource (\r -> r { schema = M.insert t meta (schema r)})
 
 -- ------------------------------------------------------------
--- Database schema.
+-- Database dialect.
 -- ------------------------------------------------------------
 
 {- | This class declares a method to read table schema by a table name.
 
 This class should be implemented for each RDBMS.
 -}
-class SchemaReader r where
+class Dialect d where
     {- | Obtains a schema of a table.
     -}
-    readTableMeta :: (WithDB db, SchemaReaderType db ~ r)
-                  => r -- ^ SchemaReader.
+    readTableMeta :: (WithDB db, DialectType db ~ d)
+                  => d -- ^ Dialect.
                   -> String -- ^ Table name.
                   -> IO TableMeta -- ^ Schema of the table.
+
+    -- | Obtains the latest generated values for auto incremental column.
+    readLatestSequences :: (WithDB db, DialectType db ~ d)
+                        => d -- ^ Dialect.
+                        -> ColumnMeta -- ^ Auto incremental column.
+                        -> Int -- ^ Inserted records by the latest insert query.
+                        -> IO [Int] -- ^ Generated values on the latest insert query.
+
+    multiInsertQuery :: d -- ^ Dialect.
+                     -> TableMeta -- ^ Table schema.
+                     -> [String] -- ^ Column names to insert.
+                     -> Int -- ^ The number of records to insert.
+                     -> String -- ^ Query string.
+    multiInsertQuery _ t cols n = q ++ L.intercalate ", " (L.replicate n h)
+        where
+            q = "INSERT INTO " ++ tableName t ++ " (" ++ L.intercalate ", " cols ++ ") VALUES "
+            h = "(" ++ L.intercalate ", " (L.replicate (length cols) "?") ++ ")"
+
+-- | Shortcut function to get dialect instance from DBContext.
+getDialect :: (WithDB db, DialectType db ~ d, Dialect d)
+           => IO d -- ^ Dialect instance.
+getDialect = do
+    res <- readIORef ?resource
+    return $ dialect (settings res)
+
+-- ------------------------------------------------------------
+-- Database schema.
+-- ------------------------------------------------------------
 
 {- | Schema of a table.
 -}

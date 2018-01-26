@@ -6,7 +6,6 @@ module Database.ORM.Insert (
     insertNodes
     , columnsAndValues
     , swapAutoIncrementalValue
-    , insertQuery
 ) where
 
 import Control.Monad.State
@@ -89,17 +88,12 @@ insert t cols vs = do
     -- The number of records one insertion can handle at maximum should be configurable.
     forM_ (seg 1000 vs) (insert_ conn t cols)
 
-    if L.any isAutoIncrement (tableColumns t)
-        then do
-            -- TODO:
-            -- This implementation is only for PostgreSQL.
-            stmt <- prepare conn "SELECT lastval()"
-            execute stmt []
-            row <- fetchRow stmt
-            return $ row >>= \row' -> Just (fromSql (row' !! 0) :: Int)
-                         >>= \v' -> Just [v' - length vs + 1 .. v']
-        else
-            return Nothing
+    case L.find isAutoIncrement (tableColumns t) of
+        Just c -> do
+            dialect <- getDialect
+            sequences <- readLatestSequences dialect c (length vs)
+            return $ Just sequences
+        Nothing -> return Nothing
     where
         seg n [] = []
         seg n as = take n as : seg n (drop n as)
@@ -112,19 +106,7 @@ insert_ :: (WithDB db, IConnection c)
         -> [[SqlValue]] -- ^ Column values of records.
         -> IO Integer -- ^ Returns the number of records inserted actually.
 insert_ conn t cols vs = do
-    let q = insertQuery t cols (length vs)
+    dialect <- getDialect
+    let q = multiInsertQuery dialect t cols (length vs)
     stmt <- prepare conn q
     execute stmt $ concat vs
-
--- | Creates insertion query.
--- TODO:
--- This function assumes the RDBMS can deal with insertion query of multiple records.
--- Some RDBMSs such as PostgreSQL or MySQL have the feature, but not all have it.
-insertQuery :: TableMeta -- ^ Table schema.
-            -> [String] -- ^ Column names to insert.
-            -> Int -- ^ The number of records to insert.
-            -> String -- ^ Query string.
-insertQuery t cols n = q ++ L.intercalate ", " (L.replicate n h)
-    where
-        q = "INSERT INTO " ++ tableName t ++ " (" ++ L.intercalate ", " cols ++ ") VALUES "
-        h = "(" ++ holder (length cols) ++ ")"

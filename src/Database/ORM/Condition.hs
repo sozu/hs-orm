@@ -172,10 +172,10 @@ instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
 -- | Escapes a string to be used in LIKE operation.
 escapeLike :: String -- ^ A string.
            -> String -- ^ Escaped string.
-escapeLike "" = ""
 escapeLike ('_':cs) = '\\' : '_' : escapeLike cs
 escapeLike ('%':cs) = '\\' : '%' : escapeLike cs
 escapeLike ('\\':cs) = '\\' : '\\' : escapeLike cs
+escapeLike s = s
 
 -- | Does a column matches to a pattern?
 -- > col LIKE "pattern"

@@ -29,19 +29,32 @@ data PostgreSQL = PostgreSQL {
 
 instance D.DBSettings PostgreSQL where
     type ConnectionType PostgreSQL = Connection
-    type SchemaReaderType PostgreSQL = SchemaReader'
+    type DialectType PostgreSQL = Dialect'
     url = url
     maxConnections = maxConnections
     open s = connectPostgreSQL (url s)
-    schemaReader _ = SchemaReader'
+    dialect _ = Dialect'
 
-data SchemaReader' = SchemaReader'
+data Dialect' = Dialect'
 
-instance SchemaReader SchemaReader' where
+instance Dialect Dialect' where
     readTableMeta = examineTable
+    readLatestSequences = latestSequences
+
+latestSequences :: (WithDB db)
+                => Dialect' -- ^ Dialect.
+                -> ColumnMeta -- ^ Auto incremental column.
+                -> Int -- ^ Inserted records by the latest insert query.
+                -> IO [Int] -- ^ Generated values on the latest insert query.
+latestSequences _ c n = do
+    context <- readIORef ?db
+    stmt <- prepare (connect context) "SELECT lastval()"
+    execute stmt []
+    row <- fetchRow stmt
+    return $ maybe [] (\r -> let v = fromSql (r !! 0) :: Int in [v - n + 1 .. v]) row
 
 examineTable :: (WithDB db)
-             => SchemaReader'
+             => Dialect'
              -> String
              -> IO TableMeta
 examineTable _ t = do
