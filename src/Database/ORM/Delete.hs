@@ -8,7 +8,17 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Database.ORM.Delete where
+module Database.ORM.Delete (
+    -- * Execute delete
+    deleteNodes
+    , delete
+    , deleteKeys
+    , deleteByCondition
+    -- * Build delete query
+    , pkColumnsAndValues
+    , pkDeleteQuery
+    , joinDeleteQuery
+) where
 
 import Control.Monad.State
 import qualified Data.List as L
@@ -79,7 +89,7 @@ type Deletable g a ms = ( GraphContainer g a
     This function deletes records of table determined by the model of second argument.
     Other model types in the graph are used just for resolving relationship between tables.
 -}
-deleteByCondition :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (S.Head (S.EdgeTypes g a)), KnownNat (Length (S.EdgeTypes g a)))
+deleteByCondition :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (Head (S.EdgeTypes g a)), KnownNat (Length (S.EdgeTypes g a)))
                   => Proxy g -- ^ Type of a graph.
                   -> Proxy a -- ^ Model type to be deleted.
                   -> Condition ms -- ^ Conditions to select records.
@@ -118,7 +128,7 @@ pkDeleteQuery t vs = (body ++ L.intercalate " OR " (replicate (length vs) cond),
         cond = "(" ++ L.intercalate " AND " (map (\c -> c ++ " = ?") (map fst $ vs !! 0)) ++ ")"
 
 -- | Creates query string to delete records selected by conditions.
-joinDeleteQuery :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (S.Head (S.EdgeTypes g a)))
+joinDeleteQuery :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (Head (S.EdgeTypes g a)))
                 => Proxy g -- ^ Type of a graph.
                 -> Proxy a -- ^ Model type to be deleted.
                 -> Condition ms -- ^ Conditions to select records.
@@ -140,7 +150,7 @@ joinDeleteQuery pg pa conds t aliases = do
     let w = if length jw == 0 then cw
                               else L.intercalate " AND " (jw ++ ["(" ++ cw ++ ")"])
 
-    let t0 = readSchema $ getName (Proxy :: Proxy (S.Head (S.EdgeTypes g a)))
+    let t0 = readSchema $ getName (Proxy :: Proxy (Head (S.EdgeTypes g a)))
 
     let q = "DELETE FROM "
             ++ tableName t ++ " AS " ++ (aliases !! index) -- table to delete

@@ -29,6 +29,9 @@ instance (KnownNat (ElemIndex t as), ElemIndexes ts as) => ElemIndexes (t ': ts)
 -- Type level functions.
 -- ------------------------------------------------------------
 
+type family Head (as :: [*]) :: * where
+    Head (a ': as) = a
+
 -- | Gets a type at an index of a type level list.
 type family ElemOf (i :: Nat) (as :: [*]) :: * where
     ElemOf 0 (a ': as) = a

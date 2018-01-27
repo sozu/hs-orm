@@ -13,16 +13,23 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Database.ORM.Record (
-    RecordWrapper(..)
+    -- * Records
+    KeyConstraint
+    , RecordWrapper(..)
     , rw'type
     , FieldNames(..)
+    -- * Fields
     , recordFields
     , recordValues
     , fieldValue
     , setFieldValue
+    -- * Relations
     , resolveRelations
     , EdgeMap(..)
     , AllRecord
+    -- * Identity
+    , Identifiable(..)
+    , PK(..)
 ) where
 
 import GHC.Exts
@@ -195,7 +202,7 @@ type family AllRecord (as :: [*]) :: Constraint where
     AllRecord (a ': as) = (RecordWrapper a, AllRecord as)
 
 -- ------------------------------------------------------------
--- Identities.
+-- Identy.
 -- ------------------------------------------------------------
 
 class (RecordWrapper a, ReadSymbols (RW'Key a)) => Identifiable a where

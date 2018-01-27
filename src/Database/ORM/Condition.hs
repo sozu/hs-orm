@@ -10,7 +10,23 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Database.ORM.Condition where
+module Database.ORM.Condition (
+      -- * Conditions
+      Condition(..)
+      , cond
+      , (..?)
+      , (.+)
+      , (.&), (.|)
+      , format, formatCondition
+      , FormattedCondition(..)
+      -- * Shortcut functions for single column conditions
+      , (==?), (!=?)
+      , (<?), (>?), (<=?), (>=?)
+      , (=@?), (!@?)
+      , escapeLike
+      , (~=?), (~@?), (~^?), (~$?)
+      , (><?), (<>?)
+) where
 
 import qualified Data.List as L
 import Data.Proxy
@@ -21,6 +37,10 @@ import Database.HDBC
 import Database.ORM.Query
 import Database.ORM.Record
 import Database.ORM.Utility
+
+-- ------------------------------------------------------------
+-- Conditions
+-- ------------------------------------------------------------
 
 data Condition (ts :: [*]) = Condition [String] (Proxy ts) [SqlValue]
 
@@ -100,7 +120,7 @@ instance (Convertible v SqlValue) => FormattedCondition (String, [v]) where
     whereValues (_, vs) = map toSql vs
 
 -- ------------------------------------------------------------
--- Functions creating simple conditions.
+-- Shortcuts for single column
 -- ------------------------------------------------------------
 
 -- | Is a column equal to a value?

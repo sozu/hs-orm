@@ -12,7 +12,25 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
-module Database.ORM.Query where
+module Database.ORM.Query (
+    -- * Columns
+    type (@:), type (@@)
+    , AliasModels(..)
+    , aliasModels
+    , AliasModel(..)
+    , GenerateColumns(..)
+    -- * Place holder
+    , holder
+    -- * Sorting
+    , SortType(..)
+    , OrderBy(..)
+    , orderBy
+    , (../)
+    , (./)
+    , formatOrderBy
+    , FormattedOrderBy(..)
+    , LimitOffset
+) where
 
 import qualified Data.List as L
 import GHC.TypeLits
@@ -22,7 +40,7 @@ import Database.ORM.Record
 import Database.ORM.Utility
 
 -- ------------------------------------------------------------
--- Column arrangements
+-- Columns
 -- ------------------------------------------------------------
 
 {- | Phantom type to declare a model and an alias for it.
@@ -88,7 +106,7 @@ instance (RecordWrapper m, GenerateColumns AliasModels ms) => GenerateColumns Al
     getAliases (AliasModels as) = as
 
 -- ------------------------------------------------------------
--- Query holder
+-- Place holder
 -- ------------------------------------------------------------
 
 -- | Generates query string of given number of placeholders separated by comma.

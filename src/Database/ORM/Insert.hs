@@ -3,7 +3,9 @@
 {-# LANGUAGE IncoherentInstances #-}
 
 module Database.ORM.Insert (
+    -- * Execute insertion
     insertNodes
+    -- * Build insert query
     , columnsAndValues
     , swapAutoIncrementalValue
 ) where

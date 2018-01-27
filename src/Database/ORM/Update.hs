@@ -3,7 +3,9 @@
 {-# LANGUAGE IncoherentInstances #-}
 
 module Database.ORM.Update (
+    -- * Execute update
     updateNodes
+    -- * Build update query
     , columnsAndValues
     , classifyColumns
     , updateQuery

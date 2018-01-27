@@ -14,16 +14,39 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Database.ORM.Select where
---module Database.ORM.Select (
---    selectNodes
---    , Condition(..)
---    , SortType(..)
---    , OrderBy(..)
---    , LimitOffset
---    , unconditional
---    , unordered
---) where
+module Database.ORM.Select (
+    -- * Edges
+    Join(..)
+    , JoinEdge(..)
+    , joinTypeOf
+    , joinCondition
+    , arrangeJoins
+    -- * Execute select
+    , EdgeTypes
+    , SelectNodes
+    , SelectQuery
+    , selectNodes
+    , selectQuery
+    -- * Graph construction
+    , addRelations
+    , addEdge
+    , FindCursor(..)
+    , MaybeCursor(..)
+    -- * Result handling
+    , RowParser(..)
+    , rowToRecord
+    , findInGraph
+    -- * Build select query
+    , createSelectQuery
+    , columnsAndTables
+    , SelectColumns(..)
+    , Joins(..)
+    , EdgeToJoin(..)
+    -- * Type families
+    , ArrangeEdgeTypes
+    , CollectEdges
+    , Edges
+) where
 
 import GHC.TypeLits
 import Control.Applicative
@@ -113,9 +136,6 @@ type EdgeTypes g a = AddSet a (ArrangeEdgeTypes (CollectEdges '[a] (Edges g)))
     They are needed just for the compilation and fulfilled requisitely in typical use of this library. 
 -}
 type SelectNodes g a ms = (GraphContainer g a, RecordWrapper a, SelectColumns ms ms, Joins g (CollectEdges '[a] (Edges g)) ms, RowParser g ms, FindCursor a ms, KnownNat (ElemIndex a (EdgeTypes g a)))
-
-type family Head (as :: [*]) :: * where
-    Head (a ': as) = a
 
 type SelectQuery g ms = (Joins g (CollectEdges ms (Edges g)) ms, RowParser g ms, FindCursor (Head ms) ms)
 

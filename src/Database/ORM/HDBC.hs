@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 
 module Database.ORM.HDBC (
+    -- * Database management
     DBURL
     , DBSettings(..)
     , DBResource(..)
@@ -17,13 +18,15 @@ module Database.ORM.HDBC (
     , withContext
     , readSchema
     , saveSchema
+    -- * Dialects
+    , Dialect(..)
+    , getDialect
+    -- * Schema
     , TableMeta(..)
     , ColumnMeta(..)
     , Relation(..)
     , getColumn
     , relationsTo
-    , Dialect(..)
-    , getDialect
 ) where
 
 import Control.Monad.IO.Class
@@ -164,7 +167,7 @@ saveSchema :: (WithResource db)
 saveSchema t meta = modifyIORef ?resource (\r -> r { schema = M.insert t meta (schema r)})
 
 -- ------------------------------------------------------------
--- Database dialect.
+-- Dialects.
 -- ------------------------------------------------------------
 
 {- | This class declares a method to read table schema by a table name.

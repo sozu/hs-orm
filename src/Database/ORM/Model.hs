@@ -33,18 +33,21 @@
     > type SomeInsert = "some_table" :++ Record Columns
 -}
 module Database.ORM.Model (
+    -- * Models
     (:##), (:++), (://)
-    , type (^-)
-    , type (^@)
-    , JoinType(..)
-    , InnerJoin, LeftJoin, RightJoin
-    , JoinTypeable
-    , getJoinType
     , ModelRole(..)
     , SqlValueConstraint
     , TableModel(..)
     , ExtraModel(..)
     , ForWhat(..)
+    -- * Relations
+    , InnerJoin, LeftJoin, RightJoin
+    , JoinType(..)
+    , JoinTypeable
+    , getJoinType
+    -- * Columns
+    , type (^-)
+    , type (^@)
 ) where
 
 import GHC.TypeLits
