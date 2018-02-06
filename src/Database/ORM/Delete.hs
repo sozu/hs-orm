@@ -7,6 +7,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Database.ORM.Delete (
     -- * Execute delete
@@ -29,6 +30,7 @@ import GHC.TypeLits
 import Data.Proxy
 import Database.HDBC
 import Data.Model.Graph
+import Data.Resource
 import Database.ORM.HDBC
 import Database.ORM.Query
 import Database.ORM.Record
@@ -54,7 +56,7 @@ delete [] = return 0
 delete models = do
     ta <- readSchema $ getName (Proxy :: Proxy a)
 
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
 
     let vs = map (pkColumnsAndValues ta) models
 
@@ -95,7 +97,7 @@ deleteByCondition :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapp
                   -> Condition ms -- ^ Conditions to select records.
                   -> IO Integer -- ^ The number of affected rows.
 deleteByCondition pg pa conds = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
 
     let n = natVal (Proxy :: Proxy (Length (S.EdgeTypes g a)))
     let aliases = map (\i -> 't':show i) [0..n-1]

@@ -2,6 +2,7 @@ module Database.ORM (
     module Database.ORM.HDBC
     , module Database.ORM.Model
     , module Database.ORM.Record
+    , module Database.ORM.Resource
     , module Database.ORM.Condition
     , module Database.ORM.Query
     , module Database.ORM.Handler
@@ -17,6 +18,7 @@ module Database.ORM (
 import Database.ORM.HDBC
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Resource
 import Database.ORM.Condition
 import Database.ORM.Query
 import Database.ORM.Handler

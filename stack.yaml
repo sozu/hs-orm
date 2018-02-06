@@ -42,6 +42,7 @@ packages:
 extra-deps:
 - HDBC-postgresql-2.3.2.5
 - hs-graph
+- hs-resource
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

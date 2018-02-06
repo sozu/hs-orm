@@ -13,6 +13,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Database.ORM.Select (
     -- * Edges
@@ -60,6 +61,7 @@ import Data.Proxy
 import Database.HDBC
 import Data.Extensible.HList
 import Data.Model.Graph
+import Data.Resource
 import Database.ORM.HDBC
 import Database.ORM.Query
 import Database.ORM.Model
@@ -184,7 +186,7 @@ selectQuery :: forall db g p ms. (WithDB db, SelectQuery g ms, GenerateColumns p
             -> [SqlValue]
             -> IO g
 selectQuery pg gc query holder = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context
 
     let columns = generateColumns gc
@@ -204,7 +206,7 @@ execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)
            -> [SqlValue] -- ^ Values for place holders.
            -> IO g -- ^ Constructed graph.
 execSelect pg columns joins modelTypes query holder = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
 
     stmt <- prepare (connect context) query
     execute stmt holder

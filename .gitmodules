@@ -1,3 +1,6 @@
 [submodule "hs-graph"]
 	path = hs-graph
 	url = https://github.com/sozu/hs-graph.git
+[submodule "hs-resource"]
+	path = hs-resource
+	url = https://github.com/sozu/hs-resource.git

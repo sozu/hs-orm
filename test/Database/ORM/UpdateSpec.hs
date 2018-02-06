@@ -17,11 +17,13 @@ import Data.Proxy
 import Data.Convertible
 import Data.Extensible
 import Data.Model.Graph
+import Data.Resource
 import Database.HDBC
 import Database.ORM.HDBC
 import Database.ORM.Update
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Resource
 import Database.ORM.Utility
 import Database.ORM.Dialect.Mock
 

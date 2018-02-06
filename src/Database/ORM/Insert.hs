@@ -1,6 +1,7 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Database.ORM.Insert (
     -- * Execute insertion
@@ -18,6 +19,7 @@ import GHC.TypeLits
 import Data.Proxy
 import Database.HDBC
 import Data.Model.Graph
+import Data.Resource
 import Database.ORM.HDBC
 import Database.ORM.Query
 import Database.ORM.Record
@@ -77,14 +79,14 @@ swapAutoIncrementalValue graph t cs vs = snd $ (`runState` graph) $ do
         Nothing -> return ()
 
 -- | Inserts records into database.
-insert :: (WithDB db)
+insert :: forall db. (WithDB db)
        => TableMeta -- ^ Table schema.
        -> [String] -- ^ Column names.
        -> [[SqlValue]] -- ^ Column values of records.
        -> IO (Maybe [Int]) -- ^ Returns the list of generated auto incremented values if any.
 insert _ _ [] = return Nothing
 insert t cols vs = do
-    context <- readIORef ?db 
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context
     -- TODO:
     -- The number of records one insertion can handle at maximum should be configurable.

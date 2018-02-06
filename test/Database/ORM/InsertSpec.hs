@@ -17,11 +17,13 @@ import Data.Proxy
 import Data.Convertible
 import Data.Extensible
 import Data.Model.Graph
+import Data.Resource
 import Database.HDBC
 import Database.ORM.HDBC
 import Database.ORM.Insert
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Resource
 import Database.ORM.Utility
 import Database.ORM.Dialect.Mock
 
@@ -62,11 +64,12 @@ spec = do
     describe "Create insert query" $ do
         it "Multiple records" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 d <- getDialect
                 let q = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] 5
                 q `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
+            return ()
 
     describe "Swap values of auto incremental column" $ do
         it "Auto incremental PK" $ do

@@ -18,11 +18,13 @@ import Data.Convertible
 import Data.Extensible
 import Data.Extensible.HList
 import Data.Model.Graph
+import Data.Resource
 import Database.HDBC
 import Database.ORM.Condition
 import Database.ORM.HDBC
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Resource
 import Database.ORM.Query
 import Database.ORM.Select
 import Database.ORM.Utility
@@ -100,8 +102,8 @@ spec = do
     describe "Collect join informations" $ do
         it "Collect all" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 joins <- collectJoins (Proxy :: Proxy (CollectEdges ABCD (Edges ABCDGraph)))
                                       (Proxy :: Proxy ABCD)
                                       ["ta", "tb", "tc", "td"] :: IO [JoinEdge ABCDGraph ABCD]
@@ -109,11 +111,12 @@ spec = do
                                           , "INNER JOIN c AS tc ON tc.c_b_id = tb.bid"
                                           , "INNER JOIN d AS td ON td.d_b_id = tb.bid"
                                           ]
+            return ()
 
         it "Extra models don't generate join clause" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 joins <- collectJoins (Proxy :: Proxy (CollectEdges WithExtra (Edges WithExtraGraph)))
                                       (Proxy :: Proxy WithExtra)
                                       ["ta", "tb", "tc", "td"] :: IO [JoinEdge WithExtraGraph WithExtra]
@@ -123,6 +126,7 @@ spec = do
                                           , ""
                                           , ""
                                           ]
+            return ()
 
     describe "Select columns other than foreign keys" $ do
         it "Select columns" $ do
@@ -134,8 +138,8 @@ spec = do
     describe "Obtain tables and their columns from graph" $ do
         it "All models" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (columns, joins) <- columnsAndTables (Proxy :: Proxy ABCDGraph)
                                                      (Proxy :: Proxy A)
                                                      ["ta", "tb", "tc", "td"]
@@ -148,11 +152,12 @@ spec = do
                                           , "INNER JOIN c AS tc ON tc.c_b_id = tb.bid"
                                           , "INNER JOIN d AS td ON td.d_b_id = tb.bid"
                                           ]
+            return ()
 
         it "Contain model all of whose relation are not included in the graph" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (columns, joins) <- columnsAndTables (Proxy :: Proxy (ABCDGraph :><: E :><: (E :- C)))
                                                      (Proxy :: Proxy A)
                                                      ["ta", "tb", "tc", "td", "te"]
@@ -167,11 +172,12 @@ spec = do
                                           , "INNER JOIN d AS td ON td.d_b_id = tb.bid"
                                           , "INNER JOIN e AS te ON te.e_c_id = tc.cid"
                                           ]
+            return ()
 
         it "Model without relation to any traceable model has no effect" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (columns, joins) <- columnsAndTables (Proxy :: Proxy (ABCDGraph :><: F))
                                                      (Proxy :: Proxy A)
                                                      ["ta", "tb", "tc", "td"]
@@ -184,6 +190,7 @@ spec = do
                                           , "INNER JOIN c AS tc ON tc.c_b_id = tb.bid"
                                           , "INNER JOIN d AS td ON td.d_b_id = tb.bid"
                                           ]
+            return ()
 
     describe "Convert row to a record" $ do
         it "New record" $ do
@@ -224,8 +231,8 @@ spec = do
     describe "Parse and return cursor list" $ do
         it "New cursor" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (cursors, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                                     parseRow (Proxy :: Proxy ABCD) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                    , [("bid", toSql (2 :: Int)), ("colb", toSql "bbb"), ("b_a_id", toSql (1 :: Int))]
@@ -248,11 +255,12 @@ spec = do
                 let rd = getRecord (fromJust cd @< g) in do
                             view #did rd `shouldBe` (4 :: Int)
                             view #cold rd `shouldBe` "ddd"
+            return ()
 
         it "Extras exist" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (cursors, g) <- flip runStateT (newGraph :: ABExtraGraph) $ do
                                     parseRow (Proxy :: Proxy ABExtra) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                       , [("bid", toSql (2 :: Int)), ("colb", toSql "bbb"), ("b_a_id", toSql (1 :: Int))]
@@ -275,11 +283,12 @@ spec = do
                 let rd = getRecord (fromJust cd @< g) in do
                             view #c rd `shouldBe` (4 :: Int)
                             view #d rd `shouldBe` "ddd"
+            return ()
 
         it "Contain null" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 (cursors, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                                     parseRow (Proxy :: Proxy '[A, B]) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                       , [("bid", SqlNull), ("colb", SqlNull), ("b_a_id", SqlNull)]
@@ -290,6 +299,7 @@ spec = do
                             view #aid ra `shouldBe` (1 :: Int)
                             view #cola ra `shouldBe` "aaa"
                 cb `shouldSatisfy` isNothing
+            return ()
 
     describe "Add an edge to the graph" $ do
         it "Edges between existing cursors" $ do
@@ -397,8 +407,8 @@ queryWithComponents :: (ElemIndexes ts ABCD, ElemIndexes us ABCD)
                     -> IO String
 queryWithComponents c o lo = do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            (q, _) <- withContext @'[DBContext Mock] resources $ do
                 let aliases = ["t0", "t1", "t2", "t3"]
 
                 (columns, joins) <- columnsAndTables (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy A) aliases
@@ -407,5 +417,5 @@ queryWithComponents c o lo = do
                                             (formatCondition c (Proxy :: Proxy '[A, B, C, D]) aliases)
                                             (formatOrderBy o (Proxy :: Proxy '[A, B, C, D]) aliases)
                                             lo
-
                 return q
+            return q

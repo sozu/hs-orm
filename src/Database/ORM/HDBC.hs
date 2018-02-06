@@ -4,6 +4,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Database.ORM.HDBC (
     -- * Database management
@@ -15,7 +18,6 @@ module Database.ORM.HDBC (
     , DBContext(..)
     , close
     , WithDB
-    , withContext
     , readSchema
     , saveSchema
     -- * Dialects
@@ -37,6 +39,7 @@ import qualified Data.Map as M
 import Data.Maybe (fromJust)
 import Database.HDBC
 import Data.Pool
+import Data.Resource
 
 type DBURL = String
 
@@ -121,36 +124,20 @@ close (DBContext c False _) = rollback c
 
 {- | Constraint type to declare that the function has an implicit parameter `?db` whose type is `DBContext db`.
 -}
-type WithDB db = (?db :: IORef (DBContext db), WithResource db)
-
-{- | Execute function which has an implicit parameter of DBContext.
-
-This function needs implicit parameter `?resource` of `DBResource db`.
-A connection is obtained from connection pool, then, the function is executed with it, finally, it is closed according to the status.
--}
-withContext :: (WithResource db, IConnection (ConnectionType db))
-            => (WithDB db => IO b) -- ^ A function to execute.
-            -> IO b -- ^ A value returned by the function.
-withContext f = do
-    res <- readIORef ?resource
-    withResource (pool res) $ \c -> do
-        cxtRef <- newIORef (DBContext c True ?resource)
-        let ?db = cxtRef
-        r <- f
-        cxt <- readIORef cxtRef
-        close cxt
-        return r
+--type WithDB db = (?db :: IORef (DBContext db), WithResource db)
+type WithDB db = (With '[DBContext db], DBSettings db)
 
 {- | Read schema of a table in a DBContext. 
 
 When schema of a table is read, it is stored in DBResource referred from the context and returned for every subsequent invocation of this function.
 Therefore, database is accessed only once for one table in all contexts referreing the same DBResource.
 -}
-readSchema :: (WithDB db)
+readSchema :: forall db. (WithDB db)
            => String -- ^ Table name.
            -> IO TableMeta -- ^ Schema of the table.
 readSchema t = do
-    res <- readIORef ?resource
+    cxt <- readIORef $ contextOf @(DBContext db) ?cxt
+    res <- readIORef $ resource cxt
     case M.lookup t (schema res) of
         Just tm -> return tm
         Nothing -> do
@@ -160,11 +147,14 @@ readSchema t = do
 
 {- | Saves a table schema in DBResource.
 -}
-saveSchema :: (WithResource db)
+saveSchema :: forall db. (WithDB db)
            => String -- ^ Table name.
            -> TableMeta -- ^ Schema of the table.
            -> IO () -- ^ No action.
-saveSchema t meta = modifyIORef ?resource (\r -> r { schema = M.insert t meta (schema r)})
+saveSchema t meta = do
+    cxt <- readIORef $ contextOf @(DBContext db) ?cxt
+    let res = resource cxt
+    modifyIORef res (\r -> r { schema = M.insert t meta (schema r)})
 
 -- ------------------------------------------------------------
 -- Dialects.
@@ -200,10 +190,11 @@ class Dialect d where
             h = "(" ++ L.intercalate ", " (L.replicate (length cols) "?") ++ ")"
 
 -- | Shortcut function to get dialect instance from DBContext.
-getDialect :: (WithDB db, DialectType db ~ d, Dialect d)
+getDialect :: forall db d. (WithDB db, DialectType db ~ d, Dialect d)
            => IO d -- ^ Dialect instance.
 getDialect = do
-    res <- readIORef ?resource
+    cxt <- readIORef $ contextOf @(DBContext db) ?cxt
+    res <- readIORef $ resource cxt
     return $ dialect (settings res)
 
 -- ------------------------------------------------------------

@@ -2,6 +2,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Database.ORM.Dialect.PostgreSQL (
     WithDB'
@@ -13,6 +15,7 @@ import qualified Data.Map as M
 import Control.Applicative
 import Data.Convertible
 import Data.IORef
+import Data.Resource
 import Database.HDBC
 import Database.HDBC.PostgreSQL
 import Data.Maybe (maybe, fromJust)
@@ -41,24 +44,24 @@ instance Dialect Dialect' where
     readTableMeta = examineTable
     readLatestSequences = latestSequences
 
-latestSequences :: (WithDB db)
+latestSequences :: forall db. (WithDB db)
                 => Dialect' -- ^ Dialect.
                 -> ColumnMeta -- ^ Auto incremental column.
                 -> Int -- ^ Inserted records by the latest insert query.
                 -> IO [Int] -- ^ Generated values on the latest insert query.
 latestSequences _ c n = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
     stmt <- prepare (connect context) "SELECT lastval()"
     execute stmt []
     row <- fetchRow stmt
     return $ maybe [] (\r -> let v = fromSql (r !! 0) :: Int in [v - n + 1 .. v]) row
 
-examineTable :: (WithDB db)
+examineTable :: forall db. (WithDB db)
              => Dialect'
              -> String
              -> IO TableMeta
 examineTable _ t = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context
 
     -- cols :: [ColumnMeta] -- ordinal_position順。ただしキーと関連に関わる情報は入っていない。

@@ -1,6 +1,7 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Database.ORM.Update (
     -- * Execute update
@@ -17,6 +18,7 @@ import Data.IORef
 import Data.Maybe (catMaybes)
 import GHC.TypeLits
 import Data.Proxy
+import Data.Resource
 import Database.HDBC
 import Data.Model.Graph
 import Database.ORM.HDBC
@@ -60,13 +62,13 @@ columnsAndValues graph cs ta = do
                 in zip (recordFields r ++ map fst foreigns) (recordValues r ++ relValues)
 
 -- | Update a record.
-update :: (WithDB db)
+update :: forall db. (WithDB db)
        => TableMeta -- ^ Table schema.
        -> [(String, SqlValue)] -- ^ A list of pairs holding name and value of primary key columns.
        -> [(String, SqlValue)] -- ^ A list of pairs holding name and value of columns to update.
        -> IO Integer -- ^ The number of updated records.
 update t keys cols = do
-    context <- readIORef ?db
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context
     let q = updateQuery t (map fst keys) (map fst cols)
     stmt <- prepare conn q

@@ -32,6 +32,7 @@ dependencies:
 - HDBC
 - HDBC-postgresql
 - hs-graph
+- hs-resource
 - lens
 
 library:

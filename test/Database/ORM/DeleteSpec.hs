@@ -17,12 +17,14 @@ import Data.Proxy
 import Data.Convertible
 import Data.Extensible
 import Data.Model.Graph
+import Data.Resource
 import Database.HDBC
 import Database.ORM.HDBC
 import Database.ORM.Delete
 import Database.ORM.Condition
 import Database.ORM.Model
 import Database.ORM.Record
+import Database.ORM.Resource
 import Database.ORM.Utility
 import Database.ORM.Dialect.Mock
 
@@ -95,28 +97,30 @@ spec = do
     describe "Create query with relations" $ do
         it "No joins" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 let c = cond @'[A] "#" "#.cola = ?" .+ "abc"
                 (q, holder) <- joinDeleteQuery (Proxy :: Proxy AGraph) (Proxy :: Proxy A) c (tables mock M.! "a") ["ta"]
 
                 q `shouldBe` "DELETE FROM a AS ta WHERE ta.cola = ?"
                 holder `shouldBe` [toSql "abc"]
+            return ()
 
         it "Delete query on a table having relation to another table" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 let c = cond @'[A] "#" "#.cola = ?" .+ "abc"
                 (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["ta", "tb"]
 
                 q `shouldBe` "DELETE FROM b AS tb USING a AS ta WHERE tb.b_a_id = ta.aid AND (ta.cola = ?)"
                 holder `shouldBe` [toSql "abc"]
+            return ()
 
         it "Delete query on a table having relations to many tables" $ do
             r <- newResource mock
-            let ?resource = r
-            withContext $ do
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
                 let c = (cond @'[A] "#" "#.cola = ?" .+ "abc")
                      .& (cond @'[C, D] "#" "#.colc * 2 = #.cold")
                 (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["ta", "tb", "tc", "td"]
@@ -124,4 +128,5 @@ spec = do
                 q `shouldBe` "DELETE FROM b AS tb USING a AS ta, c AS tc, d AS td \
                              \WHERE tb.b_a_id = ta.aid AND tc.c_b_id = tb.bid AND td.d_b_id = tb.bid AND ((ta.cola = ?) AND (tc.colc * 2 = td.cold))"
                 holder `shouldBe` [toSql "abc"]
+            return ()
 
