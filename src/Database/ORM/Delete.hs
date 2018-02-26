@@ -8,6 +8,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.Delete (
     -- * Execute delete
@@ -62,6 +63,8 @@ delete models = do
 
     let (q, holder) = pkDeleteQuery ta vs
 
+    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q
+
     stmt <- prepare (connect context) q
     execute stmt holder
 
@@ -106,6 +109,8 @@ deleteByCondition pg pa conds = do
 
     let w = formatCondition conds (Proxy :: Proxy (S.EdgeTypes g a)) aliases
     (q, holder) <- joinDeleteQuery pg pa conds ta aliases
+
+    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q
 
     stmt <- prepare (connect context) q
     execute stmt holder

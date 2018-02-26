@@ -14,6 +14,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.Select (
     -- * Edges
@@ -207,6 +208,8 @@ execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)
            -> IO g -- ^ Constructed graph.
 execSelect pg columns joins modelTypes query holder = do
     context <- readIORef $ contextOf @(DBContext db) ?cxt
+
+    $(logQD' loggerTag) ?cxt $ "SQL: " ++ query
 
     stmt <- prepare (connect context) query
     execute stmt holder

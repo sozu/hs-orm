@@ -7,10 +7,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.HDBC (
     -- * Database management
     DBURL
+    , loggerTag
     , DBSettings(..)
     , DBResource(..)
     , newResource
@@ -42,6 +44,9 @@ import Data.Pool
 import Data.Resource
 
 type DBURL = String
+
+loggerTag :: String
+loggerTag = "Database.ORM"
 
 -- ------------------------------------------------------------
 -- Database management.
@@ -154,6 +159,7 @@ saveSchema :: forall db. (WithDB db)
 saveSchema t meta = do
     cxt <- readIORef $ contextOf @(DBContext db) ?cxt
     let res = resource cxt
+    $(logQD' "Database.ORM") ?cxt $ "HDBC: Save schema of '" ++ t ++ "'"
     modifyIORef res (\r -> r { schema = M.insert t meta (schema r)})
 
 -- ------------------------------------------------------------
@@ -183,8 +189,8 @@ class Dialect d where
                      -> TableMeta -- ^ Table schema.
                      -> [String] -- ^ Column names to insert.
                      -> Int -- ^ The number of records to insert.
-                     -> String -- ^ Query string.
-    multiInsertQuery _ t cols n = q ++ L.intercalate ", " (L.replicate n h)
+                     -> (String, String) -- ^ Strings of query and place holders.
+    multiInsertQuery _ t cols n = (q, L.intercalate ", " (L.replicate n h))
         where
             q = "INSERT INTO " ++ tableName t ++ " (" ++ L.intercalate ", " cols ++ ") VALUES "
             h = "(" ++ L.intercalate ", " (L.replicate (length cols) "?") ++ ")"

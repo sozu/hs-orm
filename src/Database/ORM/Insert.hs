@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.Insert (
     -- * Execute insertion
@@ -111,6 +112,9 @@ insert_ :: (WithDB db, IConnection c)
         -> IO Integer -- ^ Returns the number of records inserted actually.
 insert_ conn t cols vs = do
     dialect <- getDialect
-    let q = multiInsertQuery dialect t cols (length vs)
-    stmt <- prepare conn q
+    let (q, hs) = multiInsertQuery dialect t cols (length vs)
+
+    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q ++ "...(" ++ show (length vs) ++ " holders)"
+
+    stmt <- prepare conn (q ++ hs)
     execute stmt $ concat vs

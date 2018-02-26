@@ -67,8 +67,8 @@ spec = do
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
                 d <- getDialect
-                let q = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] 5
-                q `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
+                let (q, hs) = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] 5
+                (q ++ hs) `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
             return ()
 
     describe "Swap values of auto incremental column" $ do

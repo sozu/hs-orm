@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.Update (
     -- * Execute update
@@ -71,6 +72,9 @@ update t keys cols = do
     context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context
     let q = updateQuery t (map fst keys) (map fst cols)
+
+    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q
+
     stmt <- prepare conn q
     execute stmt $ (map snd cols) ++ (map snd keys)
 
