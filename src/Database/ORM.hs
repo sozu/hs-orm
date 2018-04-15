@@ -13,6 +13,7 @@ module Database.ORM (
     , deleteNodes
     , delete
     , deleteByCondition
+    , generateModel
 ) where
 
 import Database.ORM.HDBC
@@ -26,3 +27,4 @@ import Database.ORM.Select
 import Database.ORM.Insert
 import Database.ORM.Update
 import Database.ORM.Delete
+import Database.ORM.TH

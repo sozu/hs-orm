@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Database.ORM.Dialect.PostgreSQL (
     WithDB'
@@ -16,11 +17,13 @@ import Control.Applicative
 import Data.Convertible
 import Data.IORef
 import Data.Resource
+import Language.Haskell.TH
 import Database.HDBC
 import Database.HDBC.PostgreSQL
 import Data.Maybe (maybe, fromJust)
 import Database.ORM.HDBC hiding (DBSettings(..))
 import Database.ORM.Query
+import Database.ORM.TH
 import qualified Database.ORM.HDBC as D (DBSettings(..))
 
 type WithDB' = WithDB PostgreSQL
@@ -37,6 +40,10 @@ instance D.DBSettings PostgreSQL where
     maxConnections = maxConnections
     open s = connectPostgreSQL (url s)
     dialect _ = Dialect'
+
+instance TypeMappable PostgreSQL where
+    -- TODO
+    mapColumnType _ typ = [t| String |]
 
 data Dialect' = Dialect'
 
