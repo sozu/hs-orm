@@ -17,6 +17,7 @@ import Database.ORM.HDBC
 import Database.ORM.Model
 import Database.ORM.Record
 import Database.ORM.Insert
+import Database.ORM.Update
 
 -- | This class declares methods to restore graph into database.
 class (GraphFactory g) => GraphHandler g (as :: [*]) where
@@ -39,7 +40,7 @@ instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a,
                     in if forInsert m then do
                         insertNodes graph cs 
                     else if forUpdate m then do 
-                        return graph
+                        updateNodes graph cs
                     else 
                         return graph
                 else
