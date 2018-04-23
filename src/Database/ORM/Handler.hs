@@ -26,10 +26,10 @@ class (GraphFactory g) => GraphHandler g (as :: [*]) where
     restoreGraph :: (WithDB db)
                  => g -- ^ A graph to restore.
                  -> proxy as -- ^ A proxy specifying types of @TableModel@ and @Edge@ listed in dependency order.
-                 -> IO () -- ^ Empty IO Monad.
+                 -> IO g -- ^ Restored graph.
 
 instance (GraphFactory g) => GraphHandler g '[] where
-    restoreGraph graph p = return ()
+    restoreGraph graph p = return graph
 
 instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a, ForWhat a) => GraphHandler g (a ': as) where
     restoreGraph graph p = do
