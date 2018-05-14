@@ -17,6 +17,7 @@ import Database.ORM.Model
 class TypeMappable db where
     mapColumnType :: db
                   -> String
+                  -> String
                   -> TypeQ
 
 generateModel :: forall db. (ContextResources (Refs '[DBContext db]) (Refs '[DBResource db]), Resource (DBResource db), ResourceContext (DBContext db), DBSettings db, TypeMappable db)
@@ -36,4 +37,8 @@ columnDefinition :: (TypeMappable db)
                  => db
                  -> ColumnMeta
                  -> TypeQ
-columnDefinition settings (ColumnMeta {..}) = infixT (litT $ strTyLit columnName) (mkName $ ":>") (mapColumnType settings columnType)
+columnDefinition settings (ColumnMeta {..}) = infixT (litT $ strTyLit columnName) (mkName $ ":>") (ct isNullable)
+    where
+        ct :: Bool -> TypeQ
+        ct True = appT (conT ''Maybe) (mapColumnType settings columnType userType)
+        ct False = mapColumnType settings columnType userType

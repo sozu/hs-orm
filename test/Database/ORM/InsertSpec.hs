@@ -39,7 +39,7 @@ type WithAutoGraph = Graph WithAuto
 type WithFKGraph = Graph A :><: B :><: WithFK :><: (WithFK :- A) :><: (WithFK :- B)
 
 col :: Bool -> String -> Bool -> ColumnMeta
-col pk n auto = ColumnMeta pk n "" False auto Nothing
+col pk n auto = ColumnMeta pk n "" "" False auto Nothing
 
 rel :: ColumnMeta -> (String, String) -> ColumnMeta
 rel cm (t, c) = cm { relation = Just (Relation t c) }

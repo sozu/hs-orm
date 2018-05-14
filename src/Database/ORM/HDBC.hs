@@ -219,7 +219,8 @@ data TableMeta =
 data ColumnMeta =
     ColumnMeta { isPrimary :: Bool -- ^ Denotes if this column is a primary key.
                , columnName :: String -- ^ Column name.
-               , columnType :: String -- ^ Data type name of the column.
+               , columnType :: String -- ^ Type name defined by DB engine.
+               , userType :: String -- ^ Type name defined by user.
                , isNullable :: Bool -- ^ Denotes if this column is nullable.
                , isAutoIncrement :: Bool -- ^ Denotes if this column has auto incremental attribute.
                , relation :: Maybe Relation -- ^ Has a relation information if this column is a foreign key, otherwise Nothing.

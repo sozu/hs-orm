@@ -44,25 +44,25 @@ instance D.DBSettings PostgreSQL where
 
 instance TypeMappable PostgreSQL where
     -- TODO not defined completely
-    mapColumnType _ "smallint" = [t| Integer |]
-    mapColumnType _ "integer" = [t| Integer |]
-    mapColumnType _ "bigint" = [t| Integer |]
-    mapColumnType _ "decimal" = [t| Integer |]
-    mapColumnType _ "numeric" = [t| Integer |]
-    mapColumnType _ "real" = [t| Float |]
-    mapColumnType _ "double precision" = [t| Double |]
-    mapColumnType _ "smallserial" = [t| Integer |]
-    mapColumnType _ "serial" = [t| Integer |]
-    mapColumnType _ "bigserial" = [t| Integer |]
-    mapColumnType _ "character varying" = [t| String |]
-    mapColumnType _ "character" = [t| String |]
-    mapColumnType _ "text" = [t| String |]
-    mapColumnType _ "timestamp with time zone" = [t| UTCTime |]
-    mapColumnType _ "timestamp" = [t| LocalTime |]
-    mapColumnType _ "timestamp without time zone" = [t| LocalTime |]
-    mapColumnType _ "date" = [t| Day |]
-    mapColumnType _ "time with time zone" = [t| TimeOfDay |]
-    mapColumnType _ "time without time zone" = [t| TimeOfDay |]
+    mapColumnType _ "smallint" _ = [t| Integer |]
+    mapColumnType _ "integer" _ = [t| Integer |]
+    mapColumnType _ "bigint" _ = [t| Integer |]
+    mapColumnType _ "decimal" _ = [t| Integer |]
+    mapColumnType _ "numeric" _ = [t| Integer |]
+    mapColumnType _ "real" _ = [t| Float |]
+    mapColumnType _ "double precision" _ = [t| Double |]
+    mapColumnType _ "smallserial" _ = [t| Integer |]
+    mapColumnType _ "serial" _ = [t| Integer |]
+    mapColumnType _ "bigserial" _ = [t| Integer |]
+    mapColumnType _ "character varying" _ = [t| String |]
+    mapColumnType _ "character" _ = [t| String |]
+    mapColumnType _ "text" _ = [t| String |]
+    mapColumnType _ "timestamp with time zone" _ = [t| UTCTime |]
+    mapColumnType _ "timestamp" _ = [t| LocalTime |]
+    mapColumnType _ "timestamp without time zone" _ = [t| LocalTime |]
+    mapColumnType _ "date" _ = [t| Day |]
+    mapColumnType _ "time with time zone" _ = [t| TimeOfDay |]
+    mapColumnType _ "time without time zone" _ = [t| TimeOfDay |]
 
 data Dialect' = Dialect'
 
@@ -166,7 +166,14 @@ _fetchAnd conn q holder f = do
 
 _parseColumnMeta :: M.Map String SqlValue
                  -> [ColumnMeta]
-_parseColumnMeta row = [ColumnMeta { isPrimary = False, columnName = name, columnType = typ, isNullable = null, isAutoIncrement = auto, relation = Nothing }]
+_parseColumnMeta row = [ColumnMeta { isPrimary = False
+                                   , columnName = name
+                                   , columnType = typ
+                                   , userType = udt
+                                   , isNullable = null
+                                   , isAutoIncrement = auto
+                                   , relation = Nothing
+                                   }]
     where
         name = fromSql $ row M.! "column_name" :: String
         typ = fromSql $ row M.! "data_type" :: String

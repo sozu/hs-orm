@@ -70,7 +70,7 @@ type WithExtra = '[A, B, C, D, Extra1, Extra2]
 type ABExtra = '[A, B, Extra1, Extra2]
 
 col :: Bool -> String -> Bool -> ColumnMeta
-col pk n auto = ColumnMeta pk n "" False auto Nothing
+col pk n auto = ColumnMeta pk n "" "" False auto Nothing
 
 rel :: ColumnMeta -> (String, String) -> ColumnMeta
 rel cm (t, c) = cm { relation = Just (Relation t c) }
