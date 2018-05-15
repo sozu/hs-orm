@@ -302,8 +302,6 @@ rowToRecord t row
         let v = newRecord values :: a
         c <- findInGraph t v
         return $ Just c
-    where
-        fks = map columnName $ filter (\c -> isJust $ relation c) (tableColumns t)
 
 -- | Searches a model which has the same primary key as given model, and if no model is found, inserts the model into the graph.
 findInGraph :: (GraphContainer g a, RecordWrapper a, Monad m)

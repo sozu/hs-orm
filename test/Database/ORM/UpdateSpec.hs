@@ -37,10 +37,10 @@ type WithPKGraph = Graph WithPK
 type WithFKGraph = Graph A :><: B :><: WithFK :><: (WithFK :- A) :><: (WithFK :- B)
 
 col :: Bool -> String -> Bool -> ColumnMeta
-col pk n auto = ColumnMeta pk n "" "" False auto Nothing
+col pk n auto = ColumnMeta pk n "" "" False auto []
 
 rel :: ColumnMeta -> (String, String) -> ColumnMeta
-rel cm (t, c) = cm { relation = Just (Relation t c) }
+rel cm (t, c) = cm { relations = [Relation t c] }
 
 mock :: Mock
 mock = Mock { dbUrl = ""

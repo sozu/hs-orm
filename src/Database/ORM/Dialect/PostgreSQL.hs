@@ -21,7 +21,7 @@ import Data.Resource
 import Language.Haskell.TH
 import Database.HDBC
 import Database.HDBC.PostgreSQL
-import Data.Maybe (maybe, fromJust)
+import Data.Maybe (maybe, catMaybes)
 import Database.ORM.HDBC hiding (DBSettings(..))
 import Database.ORM.Query
 import Database.ORM.TH
@@ -136,8 +136,9 @@ examineTable _ t = do
         swapPK pks cols = flip map cols $ \c -> if columnName c `elem` pks then c { isPrimary = True} else c
         swapFK :: [(String, String)] -> [(String, Relation)] -> [ColumnMeta] -> [ColumnMeta]
         swapFK fks rels cols = flip map cols $ \c -> 
-            fromJust $ let relMap = M.fromList rels
-                       in (L.find (\k -> fst k == columnName c) fks >>= \k -> Just ( c { relation = M.lookup (snd k) relMap })) <|> Just c
+            let constrs = map snd $ filter (\k -> fst k == columnName c) fks
+                relMap = M.fromList rels
+            in c { relations = catMaybes (map (\n -> M.lookup n relMap) constrs) }
 
 data KeyType = PRIMARY | FOREIGN String deriving (Eq, Show)
 
@@ -172,7 +173,7 @@ _parseColumnMeta row = [ColumnMeta { isPrimary = False
                                    , userType = udt
                                    , isNullable = null
                                    , isAutoIncrement = auto
-                                   , relation = Nothing
+                                   , relations = []
                                    }]
     where
         name = fromSql $ row M.! "column_name" :: String

@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Database.ORM.HDBC (
     -- * Database management
@@ -28,6 +29,7 @@ module Database.ORM.HDBC (
     -- * Schema
     , TableMeta(..)
     , ColumnMeta(..)
+    , hasRelation
     , Relation(..)
     , getColumn
     , relationsTo
@@ -38,7 +40,7 @@ import Control.Monad.Trans.Control
 import Data.IORef
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (fromJust)
+import Data.Maybe (catMaybes)
 import Database.HDBC
 import Data.Pool
 import Data.Resource
@@ -223,8 +225,13 @@ data ColumnMeta =
                , userType :: String -- ^ Type name defined by user.
                , isNullable :: Bool -- ^ Denotes if this column is nullable.
                , isAutoIncrement :: Bool -- ^ Denotes if this column has auto incremental attribute.
-               , relation :: Maybe Relation -- ^ Has a relation information if this column is a foreign key, otherwise Nothing.
+               , relations :: [Relation] -- ^ Relation informations of this column.
                } deriving (Show)
+
+-- | Checks if the column is foreign key.
+hasRelation :: ColumnMeta
+            -> Bool
+hasRelation c = length (relations c) > 0
 
 {- | Relation information of a foreign key column.
 -}
@@ -245,5 +252,6 @@ getColumn t n = L.find (\c -> columnName c == n) $ tableColumns t
 relationsTo :: TableMeta -- ^ Schema of a table from which relations will be collected.
             -> String -- ^ Name of referenced table.
             -> [(String, Relation)] -- ^ List where each tuple has referencing column name and relation information.
-relationsTo t to = map (\c -> (columnName c, fromJust $ relation c)) cols
-    where cols = filter (\c -> maybe False (\r -> referenceTable r == to) (relation c)) (tableColumns t)
+relationsTo t to = catMaybes $ map references (tableColumns t)
+    where
+        references c = (columnName c,) <$> L.find (\r -> referenceTable r == to) (relations c)

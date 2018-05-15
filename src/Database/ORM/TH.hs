@@ -46,7 +46,7 @@ declareColumns settings table name = do
     r <- runIO $ newResource settings
     let resources = r `RCons` RNil
     ts <- runIO $ fst <$> withContext @'[DBContext db] resources (readSchema table)
-    let cols = map (columnDefinition settings) (filter (\c -> isNothing $ relation c) $ tableColumns ts)
+    let cols = map (columnDefinition settings) (filter (\c -> hasRelation c) $ tableColumns ts)
     let defs = foldl (\v c -> appT (appT promotedConsT c) v) promotedNilT (reverse cols)
     (: []) <$> tySynD (mkName name) [] defs
 
