@@ -13,7 +13,7 @@ module Database.ORM (
     , deleteNodes
     , delete
     , deleteByCondition
-    , generateModel
+    , declareColumns
 ) where
 
 import Database.ORM.HDBC

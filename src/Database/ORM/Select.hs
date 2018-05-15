@@ -175,17 +175,18 @@ selectNodes pg pa conds sorts lo = do
 
 {- | Executes a query and constructs a graph holding obtained values.
 
-    You must give a query which conforms to some rules.
-    - Column expressions has the same columns as fileds of corresponding model except for foreign key columns.
-    - To recever relationships between tables, foreign key column and referenced column must appear in column expressions.
-    - The order of tables in column expression must the same as the order of types of models.
+    A query must conform to some rules.
+
+    - The order of tables in column expression must be the same as the order of types of models.
+    - For each model, the order of columns must be the same as the order of fields of the model except for foreign key columns.
+    - To recover relationships between tables, foreign key column and referenced column must appear in column expressions.
 -}
 selectQuery :: forall db g p ms. (WithDB db, SelectQuery g ms, GenerateColumns p ms)
-            => Proxy g
-            -> p ms
-            -> String
-            -> [SqlValue]
-            -> IO g
+            => Proxy g -- ^ Type of a graph.
+            -> p ms -- ^ List of model types listed in the same order as column expressions in the query.
+            -> String -- ^ Query string.
+            -> [SqlValue] -- ^ Values for place holders.
+            -> IO g -- ^ Constructed graph.
 selectQuery pg gc query holder = do
     context <- readIORef $ contextOf @(DBContext db) ?cxt
     let conn = connect context

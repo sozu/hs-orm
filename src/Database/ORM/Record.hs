@@ -202,7 +202,7 @@ type family AllRecord (as :: [*]) :: Constraint where
     AllRecord (a ': as) = (RecordWrapper a, AllRecord as)
 
 -- ------------------------------------------------------------
--- Identy.
+-- Identity.
 -- ------------------------------------------------------------
 
 class (RecordWrapper a, ReadSymbols (RW'Key a)) => Identifiable a where

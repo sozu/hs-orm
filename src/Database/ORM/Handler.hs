@@ -5,10 +5,13 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Database.ORM.Handler (
     GraphHandler(..)
+  , restoreGraph
 ) where
 
 import Data.Proxy
@@ -23,16 +26,21 @@ import Database.ORM.Update
 class (GraphFactory g) => GraphHandler g (as :: [*]) where
     -- | Restores graph into database.
     -- How each @TableModels@ is handled is decided by its @ModelRole@.
-    restoreGraph :: (WithDB db)
-                 => g -- ^ A graph to restore.
-                 -> proxy as -- ^ A proxy specifying types of @TableModel@ and @Edge@ listed in dependency order.
-                 -> IO g -- ^ Restored graph.
+    restoreGraph' :: (WithDB db)
+                  => g -- ^ A graph to restore.
+                  -> proxy as -- ^ A proxy specifying types of @TableModel@ and @Edge@ listed in dependency order.
+                  -> IO g -- ^ Restored graph.
+
+restoreGraph :: forall g db. (GraphHandler g (Serialize g), WithDB db)
+             => g
+             -> IO g
+restoreGraph graph = restoreGraph' graph (Proxy :: Proxy (Serialize g))
 
 instance (GraphFactory g) => GraphHandler g '[] where
-    restoreGraph graph p = return graph
+    restoreGraph' graph p = return graph
 
 instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a, ForWhat a) => GraphHandler g (a ': as) where
-    restoreGraph graph p = do
+    restoreGraph' graph p = do
         let (cs, p') = serializeCursor graph (Proxy :: Proxy (a ': as))
 
         graph' <- if length cs > 0 then
@@ -46,4 +54,4 @@ instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a,
                 else
                     return graph
 
-        restoreGraph graph' p'
+        restoreGraph' graph' p'
