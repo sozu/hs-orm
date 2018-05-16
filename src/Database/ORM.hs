@@ -13,6 +13,7 @@ module Database.ORM (
     , deleteNodes
     , delete
     , deleteByCondition
+    , TypeMappable(..)
     , declareColumns
 ) where
 
