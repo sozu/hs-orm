@@ -15,6 +15,8 @@ module Database.ORM (
     , deleteByCondition
     , TypeMappable(..)
     , declareColumns
+    , fetchRecord
+    , insertRecord
 ) where
 
 import Database.ORM.HDBC
@@ -29,3 +31,4 @@ import Database.ORM.Insert
 import Database.ORM.Update
 import Database.ORM.Delete
 import Database.ORM.TH
+import Database.ORM.Routine

@@ -27,7 +27,12 @@ import Database.ORM.Model
 import Database.ORM.Record
 import Database.ORM.Query
 import Database.ORM.Select
+import Database.ORM.Handler
 import Database.ORM.Utility
+
+-- ------------------------------------------------------------
+-- Select
+-- ------------------------------------------------------------
 
 fetchRecord :: forall db g a. (
                WithDB db
@@ -56,3 +61,19 @@ makePKCondition pa (c : cs) (v `HCons` vs) = ((==?) @a c (runIdentity v)) .& (ma
 type family ReplicateType a (as :: [*]) :: [*] where
     ReplicateType a '[] = '[]
     ReplicateType a (x ': xs) = a ': (ReplicateType a xs)
+
+-- ------------------------------------------------------------
+-- Insert
+-- ------------------------------------------------------------
+
+-- | Inserts a record into the table.
+insertRecord :: forall db r. (
+                WithDB db
+              , RecordWrapper r
+              , ForWhat r)
+             => r -- ^ Record to insert.
+             -> IO r -- ^ Inserted record where the value of auto incremental column is filled.
+insertRecord record = do
+    graph <- restoreGraph . fst $ record +< (newGraph :: Graph r)
+    return $ head $ (values graph :: [r])
+
