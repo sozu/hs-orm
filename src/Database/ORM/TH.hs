@@ -12,6 +12,8 @@ import Language.Haskell.TH
 import Data.Maybe (isNothing)
 import Data.Extensible
 import Data.Resource
+import Data.Pool
+import Data.IORef
 import Database.ORM.HDBC
 import Database.ORM.Model
 
@@ -48,7 +50,10 @@ declareColumns settings table name = do
     ts <- runIO $ fst <$> withContext @'[DBContext db] resources (readSchema table)
     let cols = map (columnDefinition settings) (filter (\c -> not $ hasRelation c) $ tableColumns ts)
     let defs = foldl (\v c -> appT (appT promotedConsT c) v) promotedNilT (reverse cols)
-    (: []) <$> tySynD (mkName name) [] defs
+    decs <- (: []) <$> tySynD (mkName name) [] defs
+    (DBResource _ _ p) <- runIO $ readIORef r
+    runIO $ destroyAllResources p
+    return decs
 
 -- | Represents a column in the form available for the model definition.
 --
