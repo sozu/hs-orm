@@ -9,11 +9,13 @@
 module Database.ORM.Dialect.PostgreSQL (
     WithDB'
     , PostgreSQL(..)
+    , PGTableLockMode(..)
 ) where
 
 import qualified Data.List as L
 import qualified Data.Map as M
 import Control.Applicative
+import Control.Monad
 import Data.Convertible
 import Data.IORef
 import Data.Time
@@ -66,9 +68,28 @@ instance TypeMappable PostgreSQL where
 
 data Dialect' = Dialect'
 
+data PGTableLockMode = ACCESS_SHARE
+                     | ROW_SHARE
+                     | ROW_EXCLUSIVE
+                     | SHARE_UPDATE_EXCLUSIVE
+                     | SHARE
+                     | SHARE_ROW_EXCLUSIVE
+                     | EXCLUSIVE
+                     | ACCESS_EXCLUSIVE
+                     deriving (Eq, Show)
+
+showTableLockMode :: PGTableLockMode
+                  -> String
+showTableLockMode mode = map repl $ show mode
+    where
+        repl '_' = ' '
+        repl c = c
+
 instance Dialect Dialect' where
+    type LockMode Dialect' = PGTableLockMode
     readTableMeta = examineTable
     readLatestSequences = latestSequences
+    lockTables d mode tables = forM_ tables $ lockTable d mode
 
 latestSequences :: forall db. (WithDB db)
                 => Dialect' -- ^ Dialect.
@@ -81,6 +102,17 @@ latestSequences _ c n = do
     execute stmt []
     row <- fetchRow stmt
     return $ maybe [] (\r -> let v = fromSql (r !! 0) :: Int in [v - n + 1 .. v]) row
+
+lockTable :: forall db. (WithDB db)
+          => Dialect'
+          -> PGTableLockMode
+          -> String
+          -> IO ()
+lockTable _ mode table = do
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
+    stmt <- prepare (connect context) $ "LOCK TABLE " ++ table ++ " IN " ++ showTableLockMode mode ++ " MODE"
+    execute stmt []
+    return ()
 
 examineTable :: forall db. (WithDB db)
              => Dialect'

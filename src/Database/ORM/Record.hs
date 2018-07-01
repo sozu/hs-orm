@@ -30,6 +30,8 @@ module Database.ORM.Record (
     -- * Identity
     , Identifiable(..)
     , PK(..)
+    , ColExp
+    , GetExpression(..)
 ) where
 
 import GHC.Exts
@@ -54,13 +56,18 @@ class (pk (AssocKey kv)) => KeyConstraint pk kv where
 instance (KnownSymbol k) => KeyConstraint KnownSymbol (k :> v) where
 
 -- | Declares methods to deal with @a@ as a record model of table.
-class (FieldNames (RW'Type a), KnownSymbol (RW'Name a), Forall (KeyConstraint KnownSymbol) (RW'Type a), Forall (KeyValue KnownSymbol SqlValueConstraint) (RW'Type a)) => RecordWrapper a where
+class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
+      , Forall (KeyConstraint KnownSymbol) (RW'Type a)
+      , Forall (KeyValue KnownSymbol SqlValueConstraint) (RW'Type a)
+      , GetExpression (RW'Spec a)
+      ) => RecordWrapper a where
     -- | Determines a name of the table in the form of Symbol.
     type RW'Name a :: Symbol
     -- | Determines a extensible fields corresponding to records of the table.
     type RW'Type a :: [Assoc Symbol *]
     -- | Determines a ModelRole this record conforms to.
     type RW'Role a :: ModelRole
+    type RW'Spec a :: [*]
 
     newRecord :: [SqlValue] -> a
 
@@ -92,19 +99,30 @@ instance FieldNames '[] where
 instance (KnownSymbol k, FieldNames as) => FieldNames ((k :> v) ': as) where
     fieldNames _ = symbolVal (Proxy :: Proxy k) : fieldNames (Proxy :: Proxy as)
 
-instance (FieldNames xs, KnownSymbol n, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (TableModel n r (Record xs) as) where
+instance ( FieldNames xs
+         , KnownSymbol n
+         , Forall (KeyConstraint KnownSymbol) xs
+         , Forall (KeyValue KnownSymbol SqlValueConstraint) xs
+         , GetExpression as
+         ) => RecordWrapper (TableModel n r (Record xs) as) where
     type RW'Name (TableModel n r (Record xs) as) = n
     type RW'Type (TableModel n r (Record xs) as) = xs
     type RW'Role (TableModel n r (Record xs) as) = r
+    type RW'Spec (TableModel n r (Record xs) as) = as
     getRecord (Model m) = m
     updateRecord (Model m) v = Model v
     newRecord vs = Model $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                             $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
 
-instance (FieldNames xs, Forall (KeyConstraint KnownSymbol) xs, Forall (KeyValue KnownSymbol SqlValueConstraint) xs) => RecordWrapper (ExtraModel xs as) where
+instance ( FieldNames xs
+         , Forall (KeyConstraint KnownSymbol) xs
+         , Forall (KeyValue KnownSymbol SqlValueConstraint) xs
+         , GetExpression as
+         ) => RecordWrapper (ExtraModel xs as) where
     type RW'Name (ExtraModel xs as) = ""
     type RW'Type (ExtraModel xs as) = xs
     type RW'Role (ExtraModel xs as) = 'Extra'
+    type RW'Spec (ExtraModel xs as) = as
     getRecord (ExtraModel r) = r
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
@@ -240,3 +258,17 @@ type family FindFieldTypes (ss :: [Symbol]) (fs :: [Assoc Symbol *]) :: [*] wher
 type family FindFieldType (s :: Symbol) (fs :: [Assoc Symbol *]) :: * where
     FindFieldType s ('(:>) s t ': fs) = t
     FindFieldType s (f ': fs) = FindFieldType s fs
+
+data ColExp (col :: Symbol) (exp :: Symbol)
+
+class GetExpression (as :: [*]) where
+    getExpression :: Proxy as -> [(String, String)]
+
+instance GetExpression '[] where
+    getExpression _ = []
+
+instance (KnownSymbol col, KnownSymbol exp, GetExpression as) => GetExpression (ColExp col exp ': as) where
+    getExpression _ = (symbolVal (Proxy :: Proxy col), symbolVal (Proxy :: Proxy exp)) : getExpression (Proxy :: Proxy as)
+
+instance {-# OVERLAPPABLE #-} (GetExpression as) => GetExpression (a ': as) where
+    getExpression _ = getExpression (Proxy :: Proxy as)

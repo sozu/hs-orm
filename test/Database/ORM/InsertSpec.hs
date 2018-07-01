@@ -11,7 +11,9 @@ module Database.ORM.InsertSpec where
 import Test.Hspec
 import Control.Monad.State
 import Control.Lens hiding ((:>))
+import qualified Data.List as L
 import qualified Data.Map as M
+import Data.Convertible
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Proxy
 import Data.Convertible
@@ -33,10 +35,12 @@ type B = "b" :++ Record '["bid" :> Int, "colb" :> Int]
 type NoKey = "nokey" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
 type WithAuto = "withAuto" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
 type WithFK = "withFK" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
+type WithColExp = "withColExp" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String] ^+ ColExp "c2" "raw_exp"
 
 type NoKeyGraph = Graph NoKey
 type WithAutoGraph = Graph WithAuto
 type WithFKGraph = Graph A :><: B :><: WithFK :><: (WithFK :- A) :><: (WithFK :- B)
+type WithColExpGraph = Graph WithColExp
 
 col :: Bool -> String -> Bool -> ColumnMeta
 col pk n auto = ColumnMeta pk n "" "" False auto []
@@ -67,8 +71,22 @@ spec = do
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
                 d <- getDialect
-                let (q, hs) = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] 5
+                let (q, hs) = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] (L.replicate 5 [ValueOf SqlNull, ValueOf SqlNull])
                 (q ++ hs) `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)"
+            return ()
+
+        it "With columns using raw expressions" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            withContext @'[DBContext Mock] resources $ do
+                d <- getDialect
+                let (q, hs) = multiInsertQuery d (TableMeta "table" []) ["col1", "col2"] [ [ValueOf SqlNull, ValueOf SqlNull]
+                                                                                         , [RawExpression "exp1", ValueOf SqlNull]
+                                                                                         , [ValueOf SqlNull, ValueOf SqlNull]
+                                                                                         , [ValueOf SqlNull, RawExpression "exp2"]
+                                                                                         , [ValueOf SqlNull, ValueOf SqlNull]
+                                                                                         ]
+                (q ++ hs) `shouldBe` "INSERT INTO table (col1, col2) VALUES (?, ?), (exp1, ?), (?, ?), (?, exp2), (?, ?)"
             return ()
 
     describe "Swap values of auto incremental column" $ do
@@ -97,9 +115,9 @@ spec = do
             let t = tables mock M.! "nokey"
 
             cvs <- columnsAndValues g cursors t
-            cvs `shouldBe` [ [("id", toSql (1 :: Int)), ("c1", toSql (2 :: Int)), ("c2", toSql "v1")]
-                           , [("id", toSql (2 :: Int)), ("c1", toSql (4 :: Int)), ("c2", toSql "v2")]
-                           , [("id", toSql (3 :: Int)), ("c1", toSql (6 :: Int)), ("c2", toSql "v3")]
+            cvs `shouldBe` [ [("id", sqlVal (1 :: Int)), ("c1", sqlVal (2 :: Int)), ("c2", sqlVal "v1")]
+                           , [("id", sqlVal (2 :: Int)), ("c1", sqlVal (4 :: Int)), ("c2", sqlVal "v2")]
+                           , [("id", sqlVal (3 :: Int)), ("c1", sqlVal (6 :: Int)), ("c2", sqlVal "v3")]
                            ]
 
         it "With an incremental column" $ do
@@ -108,9 +126,9 @@ spec = do
             let t = tables mock M.! "withAuto"
 
             cvs <- columnsAndValues g cursors t
-            cvs `shouldBe` [ [("c1", toSql (2 :: Int)), ("c2", toSql "v1")]
-                           , [("c1", toSql (4 :: Int)), ("c2", toSql "v2")]
-                           , [("c1", toSql (6 :: Int)), ("c2", toSql "v3")]
+            cvs `shouldBe` [ [("c1", sqlVal (2 :: Int)), ("c2", sqlVal "v1")]
+                           , [("c1", sqlVal (4 :: Int)), ("c2", sqlVal "v2")]
+                           , [("c1", sqlVal (6 :: Int)), ("c2", sqlVal "v3")]
                            ]
 
         it "With incremental column and foreign keys" $ do
@@ -124,7 +142,22 @@ spec = do
             let t = tables mock M.! "withFK"
 
             cvs <- columnsAndValues g cursors t
-            cvs `shouldBe` [ [("c1", toSql (2 :: Int)), ("c2", toSql "v1"), ("b_id", toSql (10 :: Int)), ("a_id", toSql (1 :: Int))]
-                           , [("c1", toSql (4 :: Int)), ("c2", toSql "v2"), ("b_id", toSql (10 :: Int)), ("a_id", toSql (2 :: Int))]
-                           , [("c1", toSql (6 :: Int)), ("c2", toSql "v3"), ("b_id", toSql (10 :: Int)), ("a_id", toSql (3 :: Int))]
+            cvs `shouldBe` [ [("c1", sqlVal (2 :: Int)), ("c2", sqlVal "v1"), ("b_id", sqlVal (10 :: Int)), ("a_id", sqlVal (1 :: Int))]
+                           , [("c1", sqlVal (4 :: Int)), ("c2", sqlVal "v2"), ("b_id", sqlVal (10 :: Int)), ("a_id", sqlVal (2 :: Int))]
+                           , [("c1", sqlVal (6 :: Int)), ("c2", sqlVal "v3"), ("b_id", sqlVal (10 :: Int)), ("a_id", sqlVal (3 :: Int))]
                            ]
+
+        it "With ColExp" $ do
+            (cursors, g) <- flip runStateT (newGraph :: WithColExpGraph) $ do
+                                    forM [1..3] $ \i -> (+<<) (Model (#id @= i <: #c1 @= i*2 <: #c2 @= "v" ++ show i <: emptyRecord) :: WithColExp)
+            let t = tables mock M.! "nokey"
+
+            cvs <- columnsAndValues g cursors t
+            cvs `shouldBe` [ [("id", sqlVal (1 :: Int)), ("c1", sqlVal (2 :: Int)), ("c2", RawExpression "raw_exp")]
+                           , [("id", sqlVal (2 :: Int)), ("c1", sqlVal (4 :: Int)), ("c2", RawExpression "raw_exp")]
+                           , [("id", sqlVal (3 :: Int)), ("c1", sqlVal (6 :: Int)), ("c2", RawExpression "raw_exp")]
+                           ]
+
+    where
+        sqlVal :: (Convertible a SqlValue) => a -> ColumnValue
+        sqlVal v = ValueOf (toSql (v))

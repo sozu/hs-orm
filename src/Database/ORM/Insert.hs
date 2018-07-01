@@ -14,8 +14,9 @@ module Database.ORM.Insert (
 
 import Control.Monad.State
 import qualified Data.List as L
+import qualified Data.Map as M
 import Data.IORef
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybe)
 import GHC.TypeLits
 import Data.Proxy
 import Database.HDBC
@@ -45,23 +46,29 @@ columnsAndValues :: forall g a. (GraphContainer g a, RecordWrapper a, EdgeMap g 
                  => g -- ^ A graph.
                  -> [Cursor a] -- ^ Cursors indicating nodes to insert.
                  -> TableMeta -- ^ Table schema.
-                 -> IO ([[(String, SqlValue)]]) -- ^ Each item holds names and values of columns to insert of a cursor.
+                 -> IO ([[(String, ColumnValue)]]) -- ^ Each item holds names and values of columns to insert of a cursor.
 columnsAndValues graph cs ta = do
     -- Gets list where each item has a name of foreign key column and a function getting its SqlValue from a cursor.
     let foreigns = catMaybes $ mapEdges graph (Proxy :: Proxy a) (Proxy :: Proxy g) (resolveRelations ta) :: [(String, Cursor a -> Maybe SqlValue)]
+
+    let expressions = M.fromList $ getExpression (Proxy :: Proxy (RW'Spec a))
 
     -- Gets list of cursors where each item is a list of pairs of column name and its value.
     return $ flip map cs $ \c ->
                 -- Collects edges from a and concatenates fields of a model and foreign key columns of the edges.
                 let r = getRecord $ c @< graph
                     relValues = map (toSql . ($ c)) $ map snd foreigns
-                in removeAuto $ zip (recordFields r ++ map fst foreigns) (recordValues r ++ relValues)
+                in applyExp expressions $ removeAuto $ zip (recordFields r ++ map fst foreigns) (map ValueOf (recordValues r ++ relValues))
     where
         -- Function to remove auto increment column from the list of columns to insert.
-        removeAuto :: [(String, SqlValue)] -> [(String, SqlValue)]
+        removeAuto :: [(String, ColumnValue)] -> [(String, ColumnValue)]
         removeAuto as = case L.findIndex isAutoIncrement (tableColumns ta) of
                                 Just i -> take i as ++ drop (i+1) as
                                 Nothing -> as
+
+        applyExp :: M.Map String String -> [(String, ColumnValue)] -> [(String, ColumnValue)]
+        applyExp expMap as = let app (c, cv) = (c, maybe cv RawExpression (expMap M.!? c))
+                             in map app as
 
 -- | Swaps auto incremented values of inserted models.
 swapAutoIncrementalValue :: (GraphContainer g a, RecordWrapper a)
@@ -83,7 +90,7 @@ swapAutoIncrementalValue graph t cs vs = snd $ (`runState` graph) $ do
 insert :: forall db. (WithDB db)
        => TableMeta -- ^ Table schema.
        -> [String] -- ^ Column names.
-       -> [[SqlValue]] -- ^ Column values of records.
+       -> [[ColumnValue]] -- ^ Column values of records.
        -> IO (Maybe [Int]) -- ^ Returns the list of generated auto incremented values if any.
 insert _ _ [] = return Nothing
 insert t cols vs = do
@@ -108,13 +115,13 @@ insert_ :: (WithDB db, IConnection c)
         => c -- ^ Database connection.
         -> TableMeta -- ^ Table schema.
         -> [String] -- ^ Column names.
-        -> [[SqlValue]] -- ^ Column values of records.
+        -> [[ColumnValue]] -- ^ Column values of records.
         -> IO Integer -- ^ Returns the number of records inserted actually.
 insert_ conn t cols vs = do
     dialect <- getDialect
-    let (q, hs) = multiInsertQuery dialect t cols (length vs)
+    let (q, hs) = multiInsertQuery dialect t cols vs
 
     $(logQD' loggerTag) ?cxt $ "SQL: " ++ q ++ "...(" ++ show (length vs) ++ " holders)"
 
     stmt <- prepare conn (q ++ hs)
-    execute stmt $ concat vs
+    execute stmt $ catMaybes $ map toSqlValue $ concat vs

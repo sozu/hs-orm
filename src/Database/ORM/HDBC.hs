@@ -9,11 +9,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Database.ORM.HDBC (
     -- * Database management
     DBURL
     , loggerTag
+    , ColumnValue(..)
+    , toSqlValue
     , DBSettings(..)
     , DBResource(..)
     , newResource
@@ -38,6 +41,7 @@ module Database.ORM.HDBC (
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Data.IORef
+import Data.Convertible
 import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
@@ -49,6 +53,21 @@ type DBURL = String
 
 loggerTag :: String
 loggerTag = "Database.ORM"
+
+-- ------------------------------------------------------------
+-- Extensible SqlValue
+-- ------------------------------------------------------------
+
+data ColumnValue = ValueOf SqlValue
+                 | Qualified ColumnValue
+                 | RawExpression String
+                 deriving (Eq, Show)
+
+toSqlValue :: ColumnValue
+           -> Maybe SqlValue
+toSqlValue (ValueOf v) = Just v
+toSqlValue (Qualified v) = toSqlValue v
+toSqlValue (RawExpression _) = Nothing
 
 -- ------------------------------------------------------------
 -- Database management.
@@ -173,6 +192,8 @@ saveSchema t meta = do
 This class should be implemented for each RDBMS.
 -}
 class Dialect d where
+    type LockMode d :: *
+
     {- | Obtains a schema of a table.
     -}
     readTableMeta :: (WithDB db, DialectType db ~ d)
@@ -190,12 +211,23 @@ class Dialect d where
     multiInsertQuery :: d -- ^ Dialect.
                      -> TableMeta -- ^ Table schema.
                      -> [String] -- ^ Column names to insert.
-                     -> Int -- ^ The number of records to insert.
+                     -> [[ColumnValue]] -- ^ Column values of records.
                      -> (String, String) -- ^ Strings of query and place holders.
-    multiInsertQuery _ t cols n = (q, L.intercalate ", " (L.replicate n h))
+    multiInsertQuery _ t cols vals = (queryBase, L.intercalate ", " (map eachRecord vals))
         where
-            q = "INSERT INTO " ++ tableName t ++ " (" ++ L.intercalate ", " cols ++ ") VALUES "
-            h = "(" ++ L.intercalate ", " (L.replicate (length cols) "?") ++ ")"
+            queryBase = "INSERT INTO " ++ tableName t ++ " (" ++ L.intercalate ", " cols ++ ") VALUES "
+            eachRecord cvs =
+                let exp cv = case cv of
+                                ValueOf v -> "?"
+                                RawExpression s -> s
+                                Qualified v -> exp v
+                in "(" ++ L.intercalate ", " (map exp cvs) ++ ")"
+
+    lockTables :: (WithDB db, DialectType db ~ d)
+               => d
+               -> LockMode d
+               -> [String]
+               -> IO ()
 
 -- | Shortcut function to get dialect instance from DBContext.
 getDialect :: forall db d. (WithDB db, DialectType db ~ d, Dialect d)

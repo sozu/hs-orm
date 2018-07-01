@@ -38,6 +38,7 @@ module Database.ORM.Model (
     , ModelRole(..)
     , SqlValueConstraint
     , TableModel(..)
+    , type (^+)
     , ExtraModel(..)
     , ForWhat(..)
     -- * Relations
@@ -90,6 +91,9 @@ data TableModel (n :: Symbol) (r :: ModelRole) m (as :: [*]) :: * where {
 }
 
 deriving instance (Show m) => Show (TableModel (n :: Symbol) (r :: ModelRole) m as)
+
+type family (^+) m a :: * where
+    TableModel n r m as ^+ a = TableModel n r m (a ': as)
 
 -- | This type is prepared for dynamically calculated values except for columns by query.
 -- Aggregation operations of grouped records will generate those values (ex. COUNT).

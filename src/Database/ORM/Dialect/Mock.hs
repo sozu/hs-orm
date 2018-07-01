@@ -26,9 +26,13 @@ instance D.DBSettings Mock where
 
 data Dialect = Dialect Mock
 
+data LockMock
+
 instance D.Dialect Dialect where
+    type LockMode Dialect = LockMock
     readTableMeta (Dialect s) t = return $ maybe (D.TableMeta t []) id $ M.lookup t (tables s)
     readLatestSequences _ _ _ = return []
+    lockTables _ _ _ = return ()
 
 instance IConnection MockConnection where
     disconnect _ = return ()
