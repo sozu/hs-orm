@@ -39,6 +39,7 @@ import GHC.TypeLits
 import Data.Functor.Identity
 import Data.Monoid
 import Data.Proxy
+import Data.Aeson (ToJSON(..))
 import Data.Extensible
 import Data.Extensible.Internal
 import Data.Model.Graph
@@ -84,6 +85,10 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
     getName :: proxy a -- ^ Proxy to this record model type.
             -> String -- ^ Table name of @a@.
     getName p = symbolVal (Proxy :: Proxy (RW'Name a))
+
+instance (RecordWrapper a, ToJSON (Record (RW'Type a))) => ToJSON a where
+    toJSON = toJSON . getRecord
+    toEncoding = toEncoding . getRecord
 
 rw'type :: forall a. (RecordWrapper a)
         => Proxy a

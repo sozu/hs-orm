@@ -28,6 +28,7 @@ dependencies:
 - transformers
 - monad-control
 - convertible
+- aeson
 - extensible
 - resource-pool
 - HDBC
