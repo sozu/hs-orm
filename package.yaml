@@ -30,6 +30,8 @@ dependencies:
 - convertible
 - aeson
 - extensible
+- profunctors
+- comonad
 - resource-pool
 - HDBC
 - HDBC-postgresql

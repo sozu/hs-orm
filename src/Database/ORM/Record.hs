@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Database.ORM.Record (
     -- * Records
@@ -35,13 +36,18 @@ module Database.ORM.Record (
 ) where
 
 import GHC.Exts
+import GHC.OverloadedLabels
 import GHC.TypeLits
 import Data.Functor.Identity
 import Data.Monoid
+import Data.Profunctor
+import Data.Profunctor.Rep
+import Control.Comonad
 import Data.Proxy
 import Data.Aeson (ToJSON(..))
 import Data.Extensible
 import Data.Extensible.Internal
+import Data.Extensible.Internal.Rig
 import Data.Model.Graph
 import Database.HDBC
 import Database.ORM.HDBC
@@ -76,6 +82,9 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
     getRecord :: a -- ^ A record model.
               -> Record (RW'Type a) -- ^ An extensible record.
 
+    wrapRecord :: Record (RW'Type a)
+               -> a
+
     -- | Replace the extensible record of this record model.
     updateRecord :: a -- ^ A record model.
                  -> Record (RW'Type a) -- ^ New extensible record replacing current one.
@@ -89,6 +98,59 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
 instance (RecordWrapper a, ToJSON (Record (RW'Type a))) => ToJSON a where
     toJSON = toJSON . getRecord
     toEncoding = toEncoding . getRecord
+
+-- TODO need specializing to distinguish from instance defined in Data.Extensible.
+--instance {-# OVERLAPPABLE #-} ( Extensible f p (:*)
+--         , Profunctor p
+--         , Functor f
+--         , KnownNat n
+--         , Elaborate x (FindAssoc 0 x (RW'Type r)) ~ Expecting (n :> v)
+--         , ExtensibleConstr (:*) (Field Identity) (RW'Type r) (x :> v)
+--         , Corepresentable p
+--         , Comonad (Corep p)
+--         , Associate x v (RW'Type r)
+--         , RecordWrapper r
+--         , s ~ (Field Identity :* (RW'Type r))
+--         , rep ~ Repr (Field Identity) (x :> v)
+--         , rep ~ rep'
+--         , r ~ r'
+--         ) => IsLabel (x :: Symbol) (p rep (f rep') -> p r (f r')) where
+--    fromLabel = app <$> (itemAssoc (Proxy :: Proxy x) :: Optic' p f s rep)
+--        where
+--            app :: p s (f s) -> p r (f r)
+--            app = dimap getRecord (wrapRecord <$>)
+
+instance ( IsLabel x (p rep (f rep) -> p s (f s))
+         , rep ~ Repr (Field Identity) (x :> v)
+         , Profunctor p
+         , Functor f
+         , Associate x v (RW'Type r)
+         , Corepresentable p
+         , Comonad (Corep p)
+         , RecordWrapper r
+         , s ~ (Field Identity :* RW'Type r)
+         , r ~ TableModel n rr (Record xs) as
+         ) => IsLabel (x :: Symbol) (p rep (f rep) -> p (TableModel n rr (Record (xs :: [Assoc Symbol *])) as) (f (TableModel n rr (Record xs) as))) where
+    fromLabel = app <$> (itemAssoc (Proxy :: Proxy x) :: Optic' p f (Field Identity :* xs) (Repr (Field Identity) (x :> v)))
+        where
+            app :: p s (f s) -> p r (f r)
+            app = dimap getRecord (wrapRecord <$>)
+
+instance ( IsLabel x (p rep (f rep) -> p s (f s))
+         , rep ~ Repr (Field Identity) (x :> v)
+         , Profunctor p
+         , Functor f
+         , Associate x v (RW'Type r)
+         , Corepresentable p
+         , Comonad (Corep p)
+         , RecordWrapper r
+         , s ~ (Field Identity :* RW'Type r)
+         , r ~ ExtraModel xs as
+         ) => IsLabel (x :: Symbol) (p rep (f rep) -> p (ExtraModel (xs :: [Assoc Symbol *]) as) (f (ExtraModel xs as))) where
+    fromLabel = app <$> (itemAssoc (Proxy :: Proxy x) :: Optic' p f (Field Identity :* xs) (Repr (Field Identity) (x :> v)))
+        where
+            app :: p s (f s) -> p r (f r)
+            app = dimap getRecord (wrapRecord <$>)
 
 rw'type :: forall a. (RecordWrapper a)
         => Proxy a
@@ -115,6 +177,7 @@ instance ( FieldNames xs
     type RW'Role (TableModel n r (Record xs) as) = r
     type RW'Spec (TableModel n r (Record xs) as) = as
     getRecord (Model m) = m
+    wrapRecord = Model
     updateRecord (Model m) v = Model v
     newRecord vs = Model $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                             $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
@@ -129,6 +192,7 @@ instance ( FieldNames xs
     type RW'Role (ExtraModel xs as) = 'Extra'
     type RW'Spec (ExtraModel xs as) = as
     getRecord (ExtraModel r) = r
+    wrapRecord = ExtraModel
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                                 $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
