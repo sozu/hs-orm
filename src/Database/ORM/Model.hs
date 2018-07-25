@@ -38,9 +38,10 @@ module Database.ORM.Model (
     , ModelRole(..)
     , SqlValueConstraint
     , TableModel(..)
-    , type (^+)
+    , type (:^+), type (:^-), type (:^@)
+    , type (=#), type (=+), type (=/)
     , ExtraModel(..)
-    , ForWhat(..)
+    , ForWhat(..), ForInsert(..), ForUpdate(..)
     -- * Relations
     , InnerJoin, LeftJoin, RightJoin
     , JoinType(..)
@@ -81,6 +82,16 @@ data ModelRole = Select' -- ^ In updating operation, the model is used as just a
 class (Eq v, Convertible v SqlValue, Convertible SqlValue v) => SqlValueConstraint v where
 instance (Eq v, Convertible v SqlValue, Convertible SqlValue v) => SqlValueConstraint v where
 
+-- | Set model role of a @TableModel@ to @Select'@.
+type family (=#) m :: *
+type instance (=#) (TableModel n _ m as) = TableModel n Select' m as
+-- | Set model role of a @TableModel@ to @Insert'@.
+type family (=+) m :: *
+type instance (=+) (TableModel n _ m as) = TableModel n Insert' m as
+-- | Set model role of a @TableModel@ to @Update'@.
+type family (=/) m :: *
+type instance (=/) (TableModel n _ m as) = TableModel n Update' m as
+
 -- | Data model representing a record of a table.
 -- n is a name of the table and r denotes the operation this model should be used.
 data TableModel (n :: Symbol) (r :: ModelRole) m (as :: [*]) :: * where {
@@ -92,13 +103,25 @@ data TableModel (n :: Symbol) (r :: ModelRole) m (as :: [*]) :: * where {
 
 deriving instance (Show m) => Show (TableModel (n :: Symbol) (r :: ModelRole) m as)
 
-type family (^+) m a :: * where
-    TableModel n r m as ^+ a = TableModel n r m (a ': as)
-
 -- | This type is prepared for dynamically calculated values except for columns by query.
 -- Aggregation operations of grouped records will generate those values (ex. COUNT).
 -- By adding ExtraModel into a graph, those values can be obtained in the same way as TableModel.
 newtype ExtraModel (xs :: [Assoc Symbol *]) (as :: [*]) = ExtraModel { extra :: Record xs }
+
+-- | Remove columns from the model by their names.
+type family (:^-) m (ys :: [Symbol]) :: * where
+    TableModel n r (Record xs) as :^- ys = TableModel n r (Record (xs ^- ys)) as
+    ExtraModel xs as :^- ys = ExtraModel (xs ^- ys) as
+
+-- | Select columns of the model by their names.
+type family (:^@) m (ys :: [Symbol]) :: * where
+    TableModel n r (Record xs) as :^@ ys = TableModel n r (Record (xs ^@ ys)) as
+    ExtraModel xs as :^@ ys = ExtraModel (xs ^@ ys) as
+
+-- | Add an appendix type to a model.
+type family (:^+) m a :: * where
+    TableModel n r m as :^+ a = TableModel n r m (a ': as)
+    ExtraModel xs as :^+ a = ExtraModel xs (a ': as)
 
 -- | Declares methods to define if the instance model should accept each operation.
 class ForWhat m where
@@ -116,6 +139,16 @@ instance ForWhat (TableModel n Update' m as) where
 instance ForWhat (ExtraModel xs as) where
     forInsert _ = False
     forUpdate _ = False
+
+-- | Checks the model can be used for the insertion operation.
+type family ForInsert m :: Bool where
+    ForInsert (TableModel n Insert' m as) = 'True
+    ForInsert _ = 'False
+
+-- | Checks the model can be used for the update operation.
+type family ForUpdate m :: Bool where
+    ForUpdate (TableModel n Update' m as) = 'True
+    ForUpdate _ = 'False
 
 -- ------------------------------------------------------------
 -- Relations.

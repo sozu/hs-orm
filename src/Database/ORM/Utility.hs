@@ -58,3 +58,7 @@ type family Append a as :: [k] where
 type family Length (as :: [*]) :: Nat where
     Length '[] = 0
     Length (x ': xs) = 1 + Length xs
+
+type family Apply (as :: [*]) (f :: *) :: *
+type instance Apply '[] f = f
+type instance Apply (a ': as) f = a -> Apply as f

@@ -241,6 +241,8 @@ getDialect = do
 -- Database schema.
 -- ------------------------------------------------------------
 
+-- TODO: Need to handle foreign key columns which are part of primary keys correctly.
+
 {- | Schema of a table.
 -}
 data TableMeta =

@@ -42,6 +42,9 @@ import Database.ORM.Utility
 -- Conditions
 -- ------------------------------------------------------------
 
+-- TODO: need edge conditions
+-- (:-?) @A "id" 1
+
 data Condition (ts :: [*]) = Condition [String] (Proxy ts) [SqlValue]
 
 -- cond @'[@A.Model, B.Model] "??" "3 * ??.val < 7 + ??.d"

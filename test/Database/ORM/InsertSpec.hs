@@ -35,7 +35,7 @@ type B = "b" :++ Record '["bid" :> Int, "colb" :> Int]
 type NoKey = "nokey" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
 type WithAuto = "withAuto" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
 type WithFK = "withFK" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String]
-type WithColExp = "withColExp" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String] ^+ ColExp "c2" "raw_exp"
+type WithColExp = "withColExp" :++ Record '["id" :> Int, "c1" :> Int, "c2" :> String] :^+ ColExp "c2" "raw_exp"
 
 type NoKeyGraph = Graph NoKey
 type WithAutoGraph = Graph WithAuto

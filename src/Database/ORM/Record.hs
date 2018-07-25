@@ -17,6 +17,7 @@ module Database.ORM.Record (
     -- * Records
     KeyConstraint
     , RecordWrapper(..)
+    , Rewrap(..)
     , rw'type
     , FieldNames(..)
     -- * Fields
@@ -196,6 +197,20 @@ instance ( FieldNames xs
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                                 $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
+
+class (RecordWrapper s, RecordWrapper t) => Rewrap s t where
+    (~/) :: s -> (Record (RW'Type s) -> Record (RW'Type t)) -> t
+
+instance ( RecordWrapper (TableModel n r1 (Record xs) as)
+         , RecordWrapper (TableModel n r2 (Record ys) bs)
+         , FieldNames xs
+         , FieldNames ys
+         ) => Rewrap (TableModel n r1 (Record xs) as) (TableModel n r2 (Record ys) bs) where
+    (~/) s f = Model (f $ getRecord s)
+instance ( RecordWrapper (ExtraModel xs as)
+         , RecordWrapper (ExtraModel ys bs)
+         ) => Rewrap (ExtraModel xs as) (ExtraModel ys bs) where
+    (~/) s f = ExtraModel (f $ getRecord s)
 
 -- ------------------------------------------------------------
 -- Fields.

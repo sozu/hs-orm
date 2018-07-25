@@ -20,6 +20,7 @@ module Database.ORM.Delete (
     , pkColumnsAndValues
     , pkDeleteQuery
     , joinDeleteQuery
+    , Deletable(..)
 ) where
 
 import Control.Monad.State
