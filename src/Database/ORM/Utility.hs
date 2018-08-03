@@ -46,7 +46,7 @@ type family HasElems (as :: [*]) (bs :: [*]) :: Constraint where
     HasElems (a ': '[]) bs = KnownNat (ElemIndex a bs)
     HasElems (a ': as) bs = (KnownNat (ElemIndex a bs), HasElems as bs)
 
-type family Concat (as :: [*]) (bs :: [*]) :: [*] where
+type family Concat (as :: [k]) (bs :: [k]) :: [k] where
     Concat '[] bs = bs
     Concat (a ': as) bs = a ': Concat as bs
 

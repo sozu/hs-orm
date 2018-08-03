@@ -37,28 +37,6 @@ import Database.ORM.Utility
 import Debug.Trace
 
 -- ------------------------------------------------------------
--- Utilities 
--- ------------------------------------------------------------
-
--- | Denotes types containing values which can be converted into @SqlValue@.
-class PlaceHolder a where
-    -- | Returns values converted from the instance type to @SqlValue@.
-    holderValues :: a -- ^ @PlaceHolder@.
-                 -> [SqlValue] -- ^ List of converted @SqlValue@s. 
-
-instance {-# OVERLAPPABLE #-} (Convertible a SqlValue) => PlaceHolder a where
-    holderValues v = [toSql v]
-instance PlaceHolder [SqlValue] where
-    holderValues = id
-
--- | Concatenate @PlaceHolder@s.
-(.>) :: (PlaceHolder a, PlaceHolder b)
-     => a -- ^ Prior @PlaceHolder@.
-     -> b -- ^ Posterior @PlaceHolder@.
-     -> [SqlValue] -- ^ Concatenated @PlaceHolder@.
-(.>) a b = holderValues a ++ holderValues b
-
--- ------------------------------------------------------------
 -- SQL Execution
 -- ------------------------------------------------------------
 
@@ -94,7 +72,7 @@ instance ( GraphContainer g a
          , Forall SqlValueConstraint (RW'KeyTypes a)
          ) => Fetcher g a '[] '[] where
     fetcher values = do
-        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) values
+        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) (reverse values)
         selectNodes (Proxy :: Proxy g) (Proxy :: Proxy a) conds (../) Nothing
 
 instance ( GraphContainer g a
@@ -186,7 +164,7 @@ instance ( GraphContainer g a
          , Deletable g a (ReplicateType a (RW'KeyTypes a))
          ) => Deleter g a '[] '[] where
     deleter values = do
-        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) values
+        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) (reverse values)
         deleteByCondition (Proxy :: Proxy g) (Proxy :: Proxy a) conds
         return ()
 

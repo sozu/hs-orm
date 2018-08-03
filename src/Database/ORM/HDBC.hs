@@ -2,6 +2,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -36,6 +38,8 @@ module Database.ORM.HDBC (
     , Relation(..)
     , getColumn
     , relationsTo
+    , PlaceHolder(..)
+    , (.>)
 ) where
 
 import Control.Monad.IO.Class
@@ -289,3 +293,25 @@ relationsTo :: TableMeta -- ^ Schema of a table from which relations will be col
 relationsTo t to = catMaybes $ map references (tableColumns t)
     where
         references c = (columnName c,) <$> L.find (\r -> referenceTable r == to) (relations c)
+
+-- ------------------------------------------------------------
+-- Utilities 
+-- ------------------------------------------------------------
+
+-- | Denotes types containing values which can be converted into @SqlValue@.
+class PlaceHolder a where
+    -- | Returns values converted from the instance type to @SqlValue@.
+    holderValues :: a -- ^ @PlaceHolder@.
+                 -> [SqlValue] -- ^ List of converted @SqlValue@s. 
+
+instance {-# OVERLAPPABLE #-} (Convertible a SqlValue) => PlaceHolder a where
+    holderValues v = [toSql v]
+instance PlaceHolder [SqlValue] where
+    holderValues = id
+
+-- | Concatenate @PlaceHolder@s.
+(.>) :: (PlaceHolder a, PlaceHolder b)
+     => a -- ^ Prior @PlaceHolder@.
+     -> b -- ^ Posterior @PlaceHolder@.
+     -> [SqlValue] -- ^ Concatenated @PlaceHolder@.
+(.>) a b = holderValues a ++ holderValues b

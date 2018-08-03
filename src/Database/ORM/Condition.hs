@@ -9,6 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Database.ORM.Condition (
       -- * Conditions
@@ -26,6 +27,7 @@ module Database.ORM.Condition (
       , escapeLike
       , (~=?), (~@?), (~^?), (~$?)
       , (><?), (<>?)
+      , (*-)
 ) where
 
 import qualified Data.List as L
@@ -34,6 +36,7 @@ import GHC.Exts
 import GHC.TypeLits
 import Data.Convertible
 import Database.HDBC
+import Database.ORM.HDBC
 import Database.ORM.Query
 import Database.ORM.Record
 import Database.ORM.Utility
@@ -42,12 +45,9 @@ import Database.ORM.Utility
 -- Conditions
 -- ------------------------------------------------------------
 
--- TODO: need edge conditions
--- (:-?) @A "id" 1
-
 data Condition (ts :: [*]) = Condition [String] (Proxy ts) [SqlValue]
 
--- cond @'[@A.Model, B.Model] "??" "3 * ??.val < 7 + ??.d"
+-- cond @'[A.Model, B.Model] "??" "3 * ??.val < 7 + ??.d"
 cond :: forall ts. (AllRecord (ts :: [*]), KnownNat (Length ts))
      => String
      -> String
@@ -74,18 +74,20 @@ parense :: [String]
         -> [String]
 parense (s:ss) = ('(':s) : (init ss ++ [last ss ++ ")"])
 
-(.&) :: forall ts us. Condition ts
-     -> Condition us
-     -> Condition (Concat ts us)
+-- | Concatenate two conditions by 'AND' operator.
+(.&) :: forall ts us. Condition ts -- ^ First condition.
+     -> Condition us -- ^ Second condition.
+     -> Condition (Concat ts us) -- ^ Concatenated condition.
 (.&) (Condition fmt1 pts1 vs1) (Condition fmt2 pts2 vs2) = Condition merged (Proxy :: Proxy (Concat ts us)) (vs1 ++ vs2)
     where
         merged = let p1 = parense fmt1
                      p2 = parense fmt2
                  in init p1 ++ [last p1 ++ " AND " ++ head p2] ++ tail p2
 
-(.|) :: forall ts us. Condition ts
-     -> Condition us
-     -> Condition (Concat ts us)
+-- | Concatenate two conditions by 'OR' operator.
+(.|) :: forall ts us. Condition ts -- ^ First condition.
+     -> Condition us -- ^ Second condition.
+     -> Condition (Concat ts us) -- ^ Concatenated condition.
 (.|) (Condition fmt1 pts1 vs1) (Condition fmt2 pts2 vs2) = Condition merged (Proxy :: Proxy (Concat ts us)) (vs1 ++ vs2)
     where
         merged = let p1 = parense fmt1
@@ -249,3 +251,22 @@ escapeLike s = s
       -> a -- ^ Larger value.
       -> Condition '[t] -- ^ Condition.
 (<>?) col l r = cond @'[t] "#" ("#." ++ col ++ " NOT BETWEEN ? AND ?") .+ l .+ r
+
+-- ----------------------------------------------------------------
+-- Conditions using schema
+-- ----------------------------------------------------------------
+
+-- | Apply a column name to @r@ for given condition on @t@.
+-- > (*-) @From @To id (==? 1)
+(*-) :: forall t r db. (WithDB db, RecordWrapper t, RecordWrapper r)
+     => (String -> String)
+     -> (String -> Condition '[t])
+     -> IO (Condition '[t])
+(*-) qual c = do
+    ts <- readSchema $ getName (Proxy :: Proxy t)
+    rs <- readSchema $ getName (Proxy :: Proxy r)
+    case L.find (isRef rs) (tableColumns ts) of
+            Nothing -> fail $ "Table '" ++ tableName ts ++ "' does not have foreign key to '" ++ tableName rs ++ "'"
+            Just rc' -> return $ c (qual $ columnName rc')
+    where
+        isRef rs c = any ((== tableName rs) . referenceTable) $ relations c

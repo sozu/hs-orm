@@ -68,16 +68,25 @@ decsOfModel settings name ts = do
     let colsName = mkName $ name ++ "'"
     columns <- decsOfColumns settings colsName ts
     let pks = map columnName $ filter isPrimary (tableColumns ts)
+    fks <- mapM (\c -> infixT (litT $ strTyLit $ columnName c) '(:>) (mapColumnType settings (columnType c) (userType c)))
+                $ filter hasRelation (tableColumns ts)
     let def = appT (appT (conT ''(:##)) (litT $ strTyLit $ tableName ts)) (appT (conT ''Record) (conT colsName))
-    model <- tySynD (mkName name) []
-                    $ if length pks > 0
-                        then appT (appT (conT ''(:^+)) def) (appT (conT ''PK) (strLits pks))
-                        else def
+    let appPKs = if length pks > 0
+                    then appT (appT (conT ''(:^+)) def) (appT (conT ''PK) (strLits pks))
+                    else def
+    let appFKs = if length fks > 0
+                    then appT (appT (conT ''(:^+)) appPKs) (appT (conT ''FK) (typeList fks))
+                    else appPKs
+    model <- tySynD (mkName name) [] appFKs
     return $ reverse $ model : columns
     where
         strLits :: [String] -> TypeQ
         strLits [] = promotedNilT
         strLits (k : ks) = appT (appT promotedConsT (litT $ strTyLit k)) (strLits ks)
+
+        typeList :: [Type] -> TypeQ
+        typeList [] = promotedNilT
+        typeList (t : ts) = appT (appT promotedConsT (return t)) (typeList ts)
 
 -- | Generates definition of selctable model of a table as follows.
 --

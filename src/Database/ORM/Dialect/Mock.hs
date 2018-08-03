@@ -1,10 +1,13 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TupleSections #-}
 
 module Database.ORM.Dialect.Mock (
     Mock(..)
+  , latestExecution
 ) where
 
 import qualified Data.Map as M
+import Data.IORef
 import Data.Maybe (maybe)
 import Database.HDBC
 import Database.HDBC.Statement
@@ -14,7 +17,9 @@ data Mock = Mock { dbUrl :: D.DBURL
                  , tables :: M.Map String D.TableMeta
                  }
 
-data MockConnection = MockConnection
+data MockConnection = MockConnection { latestQuery :: IORef String
+                                     , latestHolder :: IORef [SqlValue]
+                                     }
 
 instance D.DBSettings Mock where
     type ConnectionType Mock = MockConnection
@@ -39,15 +44,17 @@ instance IConnection MockConnection where
     commit _ = return ()
     rollback _ = return ()
     run _ _ _ = return 0
-    prepare _ q = return $ Statement { execute = (\_ -> return 0)
-                                     , executeRaw = (return ())
-                                     , executeMany = (\_ -> return ())
-                                     , finish = (return ())
-                                     , fetchRow = (return Nothing)
-                                     , getColumnNames = (return [])
-                                     , originalQuery = q
-                                     , describeResult = (return [])
-                                     }
+    prepare c@(MockConnection lq lh) q = do
+        writeIORef lq q
+        return $ Statement { execute = \h -> writeIORef lh h >> return 0
+                           , executeRaw = (return ())
+                           , executeMany = (\_ -> return ())
+                           , finish = (return ())
+                           , fetchRow = (return Nothing)
+                           , getColumnNames = (return [])
+                           , originalQuery = q
+                           , describeResult = (return [])
+                           }
     clone c = return c
     hdbcDriverName _ = "mockdb"
     hdbcClientVer _ = "0.0.0"
@@ -60,4 +67,11 @@ instance IConnection MockConnection where
 
 open :: Mock
      -> IO MockConnection
-open _ = return MockConnection
+open _ = do
+    lq <- newIORef ""
+    lh <- newIORef ([] :: [SqlValue])
+    return $ MockConnection lq lh
+
+latestExecution :: MockConnection
+                -> IO (String, [SqlValue])
+latestExecution (MockConnection lq lh) = (,) <$> readIORef lq <*> readIORef lh

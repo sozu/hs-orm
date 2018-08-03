@@ -6,17 +6,43 @@ module Database.ORM.ConditionSpec where
 
 import Test.Hspec
 import Data.Proxy
+import qualified Data.Map as M
 import Data.Convertible
 import Data.Extensible
 import Database.HDBC
+import Data.Resource
 import Database.ORM.Condition
+import Database.ORM.HDBC
+import Database.ORM.Dialect.Mock
 import Database.ORM.Model
+import Database.ORM.Resource
 import Database.ORM.Utility
 
 type Extra1 = ExtraModel '["a" :> Int, "b" :> String] '[]
 type Extra2 = ExtraModel '["c" :> Int, "d" :> String] '[]
 type Extra3 = ExtraModel '["e" :> Int, "f" :> String] '[]
 type Extra4 = ExtraModel '["g" :> Int, "h" :> String] '[]
+
+col :: Bool -> String -> Bool -> ColumnMeta
+col pk n auto = ColumnMeta pk n "" "" False auto []
+
+rel :: ColumnMeta -> (String, String) -> ColumnMeta
+rel cm (t, c) = cm { relations = [Relation t c] }
+
+mock :: Mock
+mock = Mock { dbUrl = ""
+            , tables = M.fromList [ ("a", TableMeta "a" [ col True "aid" False
+                                                        , col False "aname" False
+                                                        , col False "a_bid" False `rel` ("b", "bid")
+                                                        ])
+                                  , ("b", TableMeta "b" [ col True "bid" False
+                                                        , col False "bname" False
+                                                        ])
+                                  ]
+            } 
+
+type A = "a" :## Record '["aid" :> Int, "aname" :> String]
+type B = "b" :## Record '["bid" :> Int, "bname" :> String]
 
 sqlVal :: Int -> SqlValue
 sqlVal i = convert i :: SqlValue
@@ -112,3 +138,18 @@ spec = do
         it "Not between" $ do
             let c = (<>?) @Extra1 "b" "abc" "def"
             formatCondition c (Proxy :: Proxy '[Extra1]) ["t"] `shouldBe` ("t.b NOT BETWEEN ? AND ?", [toSql "abc", toSql "def"])
+
+    describe "Schema dependent condition functions" $ do
+        it "Use relational column" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            (c, _) <- withContext @'[DBContext Mock] resources $ do
+                (*-) @A @B id (==? (5 :: Int))
+            formatCondition c (Proxy :: Proxy '[A]) ["t"] `shouldBe` ("t.a_bid = ?", [toSql (5 :: Int)])
+
+        it "Use relational column with qualifying" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            (c, _) <- withContext @'[DBContext Mock] resources $ do
+                (*-) @A @B (++ " * 2") (==? (5 :: Int))
+            formatCondition c (Proxy :: Proxy '[A]) ["t"] `shouldBe` ("t.a_bid * 2 = ?", [toSql (5 :: Int)])

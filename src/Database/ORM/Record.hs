@@ -32,6 +32,7 @@ module Database.ORM.Record (
     -- * Identity
     , Identifiable(..)
     , PK(..)
+    , FK(..)
     , ColExp
     , GetExpression(..)
 ) where
@@ -99,27 +100,6 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
 instance (RecordWrapper a, ToJSON (Record (RW'Type a))) => ToJSON a where
     toJSON = toJSON . getRecord
     toEncoding = toEncoding . getRecord
-
--- TODO need specializing to distinguish from instance defined in Data.Extensible.
---instance {-# OVERLAPPABLE #-} ( Extensible f p (:*)
---         , Profunctor p
---         , Functor f
---         , KnownNat n
---         , Elaborate x (FindAssoc 0 x (RW'Type r)) ~ Expecting (n :> v)
---         , ExtensibleConstr (:*) (Field Identity) (RW'Type r) (x :> v)
---         , Corepresentable p
---         , Comonad (Corep p)
---         , Associate x v (RW'Type r)
---         , RecordWrapper r
---         , s ~ (Field Identity :* (RW'Type r))
---         , rep ~ Repr (Field Identity) (x :> v)
---         , rep ~ rep'
---         , r ~ r'
---         ) => IsLabel (x :: Symbol) (p rep (f rep') -> p r (f r')) where
---    fromLabel = app <$> (itemAssoc (Proxy :: Proxy x) :: Optic' p f s rep)
---        where
---            app :: p s (f s) -> p r (f r)
---            app = dimap getRecord (wrapRecord <$>)
 
 instance ( IsLabel x (p rep (f rep) -> p s (f s))
          , rep ~ Repr (Field Identity) (x :> v)
@@ -326,14 +306,20 @@ instance (KnownSymbol a, ReadSymbols as) => ReadSymbols (a ': as :: [Symbol]) wh
     readSymbols _ = symbolVal (Proxy :: Proxy a) : readSymbols (Proxy :: Proxy as)
 
 data PK (pk :: [Symbol])
+data FK (fk :: [Assoc Symbol *])
 
 instance (RecordWrapper (TableModel n r m as), ReadSymbols (FindPK as)) => Identifiable (TableModel n r m as) where
     type RW'Key (TableModel n r m as) = FindPK as
-    type RW'KeyTypes (TableModel n r m as) = FindFieldTypes (FindPK as) (RW'Type (TableModel n r m as))
+    type RW'KeyTypes (TableModel n r m as) = FindFieldTypes (FindPK as) (Concat (RW'Type (TableModel n r m as)) (FindFK as))
 
 type family FindPK (as :: [*]) :: [Symbol] where
     FindPK (PK pk ': as) = pk
     FindPK (a ': as) = FindPK as
+
+type family FindFK (as :: [*]) :: [Assoc Symbol *] where
+    FindFK '[] = '[]
+    FindFK (FK fk ': as) = fk
+    FindFK (a ': as) = FindFK as
 
 type family FindFieldTypes (ss :: [Symbol]) (fs :: [Assoc Symbol *]) :: [*] where
     FindFieldTypes '[] _ = '[]
