@@ -54,7 +54,6 @@ spec = do
         it "Fetch from a table having a PK" $ do
             r <- newResource mock
             let resources = r `RCons` RNil
-            let aliases = ["t0"]
             ((q, h), _) <- withContext @'[DBContext Mock] resources $ do
                 fetchOne @(Graph A) (1 :: Int)
                 conn <- connect <$> readIORef (contextOf @(DBContext Mock) ?cxt)
@@ -65,7 +64,6 @@ spec = do
         it "Fetch from a table having a Foreign PK" $ do
             r <- newResource mock
             let resources = r `RCons` RNil
-            let aliases = ["t0"]
             ((q, h), _) <- withContext @'[DBContext Mock] resources $ do
                 fetchOne @(Graph B) (1 :: Int) (2 :: Int)
                 conn <- connect <$> readIORef (contextOf @(DBContext Mock) ?cxt)
@@ -76,10 +74,20 @@ spec = do
         it "Fetch from a table having multiple PKs" $ do
             r <- newResource mock
             let resources = r `RCons` RNil
-            let aliases = ["t0"]
             ((q, h), _) <- withContext @'[DBContext Mock] resources $ do
                 fetchOne @(Graph C) (1 :: Int) "abc"
                 conn <- connect <$> readIORef (contextOf @(DBContext Mock) ?cxt)
                 latestExecution conn
             q `shouldBe` "SELECT t0.cid, t0.ckey, t0.colc FROM c AS t0  WHERE (t0.cid = ?) AND (t0.ckey = ?)"
             h `shouldBe` [toSql (1 :: Int), toSql "abc"]
+
+    describe "Count records" $ do
+        it "Count from a table" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            ((q, h), _) <- withContext @'[DBContext Mock] resources $ do
+                countTable @A (..?)
+                conn <- connect <$> readIORef (contextOf @(DBContext Mock) ?cxt)
+                latestExecution conn
+            q `shouldBe` "SELECT COUNT(*) FROM a AS t0 "
+            h `shouldBe` []

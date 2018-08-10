@@ -201,7 +201,7 @@ selectQuery pg gc query holder = do
 -- | Executes a query and constructs a graph holding obtained values.
 execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)
            => Proxy g -- ^ Type of a graph.
-           -> [[String]] -- ^ List of column names separated by tables.
+           -> [[String]] -- ^ List of column expressions separated by tables.
            -> [JoinEdge g ms] -- ^ Join informations.
            -> Proxy ms -- ^ Types of models in the same order as column expresions of the query.
            -> String -- ^ Query string.
@@ -372,11 +372,16 @@ class SelectColumns (as :: [*]) (ts :: [*]) where
 instance SelectColumns '[] ts where
     selectColumns _ _ _ = []
 
+instance {-# OVERLAPS #-} (SelectColumns ms ts) => SelectColumns (TableModel n Relate' m as ': ms) ts where 
+    selectColumns _ pts aliases = [] : selectColumns (Proxy :: Proxy ms) pts aliases
+
 instance (RecordWrapper a, SelectColumns as ts, KnownNat (ElemIndex a ts)) => SelectColumns (a ': as) ts where
-    selectColumns _ pts aliases = [(aliases !! i) ++ "." ++ c | c <- cols] : selectColumns (Proxy :: Proxy as) pts aliases
+    --selectColumns _ pts aliases = [(aliases !! i) ++ "." ++ c | c <- cols] : selectColumns (Proxy :: Proxy as) pts aliases
+    selectColumns _ pts aliases = cols : selectColumns (Proxy :: Proxy as) pts aliases
         where
             i = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a ts))
-            cols = fieldNames (Proxy :: Proxy (RW'Type a))
+            expMap = M.fromList $ getExpression (Proxy :: Proxy (RW'Spec a))
+            cols = map (\n -> maybe ((aliases !! i) ++ "." ++ n) id (expMap M.!? n)) $ fieldNames (Proxy :: Proxy (RW'Type a))
 
 type EdgeForJoin g ms a b rs = (RecordWrapper a, RecordWrapper b, GraphContainer g (EdgeT a b rs), KnownNat (ElemIndex a ms), KnownNat (ElemIndex b ms), FindCursor a ms, FindCursor b ms, JoinTypeable rs)
 

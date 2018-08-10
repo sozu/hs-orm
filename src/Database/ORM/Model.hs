@@ -34,12 +34,12 @@
 -}
 module Database.ORM.Model (
     -- * Models
-    (:##), (:++), (://)
+    (:##), (:++), (://), (:**)
     , ModelRole(..)
     , SqlValueConstraint
     , TableModel(..)
     , type (:^+), type (:^-), type (:^@)
-    , type (=#), type (=+), type (=/)
+    , type (=#), type (=+), type (=/), type (=*)
     , ExtraModel(..)
     , ForWhat(..), ForInsert(..), ForUpdate(..)
     -- * Relations
@@ -62,19 +62,20 @@ import Database.HDBC
 -- Models.
 -- ------------------------------------------------------------
 
--- | Defines a model type used to select records or indicate referenced record.
+-- | Defines a model type used to select records.
 type n :## m = TableModel n Select' m '[]
 -- | Defines a model type used to insert a record.
 type n :++ m = TableModel n Insert' m '[]
 -- | Defines a model type used to update a record.
 type n :// m = TableModel n Update' m '[]
+-- | Defines a model type used to indicate relations of tables.
+type n :** m = TableModel n Relate' m '[]
 
 -- | This type specifies in the operation type a model should be used.
-data ModelRole = Select' -- ^ In updating operation, the model is used as just a reference for foreign key column.
-                         -- In selecting operation, the model is to store results of query.
+data ModelRole = Select' -- ^ Denotes this model will be used just to represent selected records, not update tables.
                | Insert' -- ^ Denotes this model will be inserted as a new record.
                | Update' -- ^ Denotes this model will update current record.
-                         -- To determine which record should be update, this model must have an identifier column.
+               | Relate' -- ^ Denotes this model will just determine tables to join, not be instantiated by seleced records.
                | Extra' -- ^ Denotes this model does not represent an existing table.
                deriving (Show)
 
@@ -83,14 +84,21 @@ class (Eq v, Convertible v SqlValue, Convertible SqlValue v) => SqlValueConstrai
 instance (Eq v, Convertible v SqlValue, Convertible SqlValue v) => SqlValueConstraint v where
 
 -- | Set model role of a @TableModel@ to @Select'@.
-type family (=#) m :: *
-type instance (=#) (TableModel n _ m as) = TableModel n Select' m as
+type family (=#) m :: * where
+    (=#) (TableModel n _ m as) = TableModel n Select' m as
+    (=#) m = m
 -- | Set model role of a @TableModel@ to @Insert'@.
-type family (=+) m :: *
-type instance (=+) (TableModel n _ m as) = TableModel n Insert' m as
+type family (=+) m :: * where
+    (=+) (TableModel n _ m as) = TableModel n Insert' m as
+    (=+) m = m
 -- | Set model role of a @TableModel@ to @Update'@.
-type family (=/) m :: *
-type instance (=/) (TableModel n _ m as) = TableModel n Update' m as
+type family (=/) m :: * where
+    (=/) (TableModel n _ m as) = TableModel n Update' m as
+    (=/) m = m
+-- | Set model role of a @TableModel@ to @Relate'@.
+type family (=*) (m :: *) :: * where
+    (=*) (TableModel n _ m as) = TableModel n Relate' m as
+    (=*) m = m
 
 -- | Data model representing a record of a table.
 -- n is a name of the table and r denotes the operation this model should be used.
@@ -125,6 +133,8 @@ type family (:^+) m a :: * where
 
 -- | Declares methods to define if the instance model should accept each operation.
 class ForWhat m where
+    forSelect :: m -> Bool
+    forSelect _ = True
     forInsert :: m -> Bool
     forInsert _ = False
     forUpdate :: m -> Bool
@@ -135,6 +145,8 @@ instance ForWhat (TableModel n Insert' m as) where
     forInsert _ = True
 instance ForWhat (TableModel n Update' m as) where
     forUpdate _ = True
+instance ForWhat (TableModel n Relate' m as) where
+    forSelect _ = False
 
 instance ForWhat (ExtraModel xs as) where
     forInsert _ = False

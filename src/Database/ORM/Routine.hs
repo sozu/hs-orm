@@ -12,6 +12,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE OverloadedLabels #-}
 
 module Database.ORM.Routine where
 
@@ -20,6 +21,7 @@ import Data.Proxy
 import Data.IORef
 import Control.Monad.Identity
 import Data.Convertible
+import Control.Lens hiding ((:>))
 import Data.Extensible
 import Data.Extensible.HList
 import Data.Model.Graph
@@ -117,6 +119,50 @@ fetchOne :: forall g a db. (
           => Apply (RW'KeyTypes a) (IO g) -- ^ Function to obtain the graph by taking primary key values.
 fetchOne = fetcher @g @a @(RW'KeyTypes a) @(RW'Key a) []
 
+type CountModel = ExtraModel '["count" :> Integer] '[ColExp "count" "COUNT(*)"]
+
+type family ForCount (g :: *) :: * where
+    ForCount g = JustRelate g :><: CountModel :><: (CountModel :- ((=*) (GraphTop g)))
+
+-- | Make roles of all model types in graph to @Relate'@.
+--
+-- Note: GHC can't compile higher-order type families like 'Map (f :: * -> *) (xs :: [*])' despite GHCi can.
+-- General type function to convert types of nodes is not available currently.
+type family JustRelate (g :: *) where
+    JustRelate (Graph x) = Graph ((=*) x)
+    JustRelate (g :><: x) = JustRelate g :><: (=*) x
+
+countGraph :: forall g g' a (ts :: [*]) db. (
+              WithDB db
+            , g' ~ ForCount g
+            , a ~ GraphTop g'
+            , GraphFactory (JustRelate g)
+            , GraphContainer g' a
+            , SelectNodes g' a (EdgeTypes g' a)
+            , KnownNat (Length (EdgeTypes g' a))
+            , ElemIndexes ts (EdgeTypes g' a)
+            )
+            => Condition ts
+            -> IO Integer
+countGraph conds = do
+    graph <- selectNodes (Proxy :: Proxy g') (Proxy :: Proxy a) conds (../) Nothing
+    return $ view #count $ (values graph :: [CountModel]) !! 0
+
+countTable :: forall a a' g' (ts :: [*]) db. (
+              WithDB db
+            , a' ~ (=*) a
+            , g' ~ ForCount (Graph a)
+            , ElemIndexes ts '[a]
+            , RecordWrapper a
+            , RecordWrapper a'
+            , SelectNodes g' a' (EdgeTypes g' a')
+            , KnownNat (Length (EdgeTypes g' a'))
+            , ElemIndexes ts (EdgeTypes g' a')
+            )
+            => Condition ts
+            -> IO Integer
+countTable conds = countGraph @(Graph a) conds
+
 -- ------------------------------------------------------------
 -- Insert
 -- ------------------------------------------------------------
@@ -196,7 +242,7 @@ deleteOne = deleter @g @a @(RW'KeyTypes a) @(RW'Key a) []
 -- ------------------------------------------------------------
 
 type family GraphTop g :: *
-type instance GraphTop (Graph a :><: as) = a
+type instance GraphTop (g :><: a) = GraphTop g
 type instance GraphTop (Graph a) = a
 
 type family ReplicateType a (as :: [*]) :: [*] where
