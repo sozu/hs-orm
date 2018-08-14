@@ -132,6 +132,9 @@ type family JustRelate (g :: *) where
     JustRelate (Graph x) = Graph ((=*) x)
     JustRelate (g :><: x) = JustRelate g :><: (=*) x
 
+-- | Counts the number of rows of a graph.
+--
+-- The graph type should be specified by type application.
 countGraph :: forall g g' a (ts :: [*]) db. (
               WithDB db
             , g' ~ ForCount g
@@ -142,12 +145,15 @@ countGraph :: forall g g' a (ts :: [*]) db. (
             , KnownNat (Length (EdgeTypes g' a))
             , ElemIndexes ts (EdgeTypes g' a)
             )
-            => Condition ts
-            -> IO Integer
+            => Condition ts -- ^ Conditions.
+            -> IO Integer -- ^ The number of rows.
 countGraph conds = do
     graph <- selectNodes (Proxy :: Proxy g') (Proxy :: Proxy a) conds (../) Nothing
     return $ view #count $ (values graph :: [CountModel]) !! 0
 
+-- | Counts the number of rows of a table.
+--
+-- The table should be specified by type application.
 countTable :: forall a a' g' (ts :: [*]) db. (
               WithDB db
             , a' ~ (=*) a
@@ -159,8 +165,8 @@ countTable :: forall a a' g' (ts :: [*]) db. (
             , KnownNat (Length (EdgeTypes g' a'))
             , ElemIndexes ts (EdgeTypes g' a')
             )
-            => Condition ts
-            -> IO Integer
+            => Condition ts -- ^ Conditions.
+            -> IO Integer -- ^ The number of rows.
 countTable conds = countGraph @(Graph a) conds
 
 -- ------------------------------------------------------------
