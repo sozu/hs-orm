@@ -73,6 +73,10 @@ class AliasModel m where
     getAlias :: proxy m -- ^ Model type.
              -> String -- ^ Alias of the type.
 
+instance {-# OVERLAPPABLE #-} (RecordWrapper m) => AliasModel m where
+    columnExpressions _ = fieldNames (Proxy :: Proxy (RW'Type m))
+    getAlias _ = ""
+
 instance (RecordWrapper m, KnownSymbol a) => AliasModel (m @: (a :: Symbol)) where
     columnExpressions _ = map ((alias ++ ".") ++) $ fieldNames (Proxy :: Proxy (RW'Type m))
         where

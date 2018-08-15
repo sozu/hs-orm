@@ -121,8 +121,7 @@ fetchOne = fetcher @g @a @(RW'KeyTypes a) @(RW'Key a) []
 
 type CountModel = ExtraModel '["count" :> Integer] '[ColExp "count" "COUNT(*)"]
 
-type family ForCount (g :: *) :: * where
-    ForCount g = JustRelate g :><: CountModel :><: (CountModel :- ((=*) (GraphTop g)))
+type ForCount g = JustRelate g :><: CountModel :><: (CountModel :- ((=*) (GraphTop g)))
 
 -- | Make roles of all model types in graph to @Relate'@.
 --
@@ -135,20 +134,20 @@ type family JustRelate (g :: *) where
 -- | Counts the number of rows of a graph.
 --
 -- The graph type should be specified by type application.
-countGraph :: forall g g' a (ts :: [*]) db. (
+countGraph :: forall g g' a' (ts :: [*]) db. (
               WithDB db
             , g' ~ ForCount g
-            , a ~ GraphTop g'
+            , a' ~ GraphTop g'
             , GraphFactory (JustRelate g)
-            , GraphContainer g' a
-            , SelectNodes g' a (EdgeTypes g' a)
-            , KnownNat (Length (EdgeTypes g' a))
-            , ElemIndexes ts (EdgeTypes g' a)
+            , GraphContainer g' a'
+            , SelectNodes g' a' (EdgeTypes g' a')
+            , KnownNat (Length (EdgeTypes g' a'))
+            , ElemIndexes ts (EdgeTypes g' a')
             )
             => Condition ts -- ^ Conditions.
             -> IO Integer -- ^ The number of rows.
 countGraph conds = do
-    graph <- selectNodes (Proxy :: Proxy g') (Proxy :: Proxy a) conds (../) Nothing
+    graph <- selectNodes (Proxy :: Proxy g') (Proxy :: Proxy a') conds (../) Nothing
     return $ view #count $ (values graph :: [CountModel]) !! 0
 
 -- | Counts the number of rows of a table.
@@ -156,10 +155,8 @@ countGraph conds = do
 -- The table should be specified by type application.
 countTable :: forall a a' g' (ts :: [*]) db. (
               WithDB db
-            , a' ~ (=*) a
+            , a' ~ ((=*) a)
             , g' ~ ForCount (Graph a)
-            , ElemIndexes ts '[a]
-            , RecordWrapper a
             , RecordWrapper a'
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
