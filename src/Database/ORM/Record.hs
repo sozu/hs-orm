@@ -295,6 +295,14 @@ class (RecordWrapper a, ReadSymbols (RW'Key a)) => Identifiable a where
                 -> [String]
     getKeyNames p = readSymbols (Proxy :: Proxy (RW'Key a))
 
+    ident :: a
+          -> a
+          -> Bool
+    ident r1 r2 = keyValues r1 == keyValues r2
+        where
+            keys = getKeyNames (Proxy :: Proxy a)
+            keyValues r = map (fieldValue $ getRecord r) keys
+
 class ReadSymbols rs where
     readSymbols :: proxy rs
                 -> [String]
