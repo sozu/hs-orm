@@ -21,7 +21,10 @@ module Database.ORM.HDBC (
     , toSqlValue
     , DBSettings(..)
     , DBResource(..)
+    , ConnectionPool(..)
+    , withPool
     , newResource
+    , newFixedResource
     , WithResource
     , DBContext(..)
     , close
@@ -48,7 +51,7 @@ import Data.IORef
 import Data.Convertible
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybe)
 import Database.HDBC
 import Data.Pool
 import Data.Resource
@@ -112,14 +115,26 @@ class (IConnection (ConnectionType db), Dialect (DialectType db)) => DBSettings 
     dialect :: db -- ^ Connection settings.
             -> (DialectType db) -- ^ Dialect.
 
+data ConnectionPool db = ConnectionPool (Pool (ConnectionType db))
+                       | FixedConnection (ConnectionType db) (Maybe String)
+
 {- | DBResource manages connection pool of a database specified by settings record.
 
 This type also holds tables schemas as the map where each key is a table name.
 -}
 data DBResource db = DBResource { settings :: db -- ^ Settings to connect a database.
                                 , schema :: M.Map String TableMeta -- ^ Table schemas mapped by their names.
-                                , pool :: Pool (ConnectionType db) -- ^ Connection pool.
+                                , pool :: ConnectionPool db -- ^ Connection pool.
                                 }
+
+withPool :: (MonadIO m, MonadBaseControl IO m, DBSettings db)
+         => ConnectionPool db
+         -> (ConnectionType db -> m a)
+         -> m a
+withPool (ConnectionPool p) f = withResource p f
+withPool (FixedConnection c sp) f = do
+    liftIO $ maybe (return 0) (\n -> run c ("SAVEPOINT " ++ n) []) sp
+    f c
 
 {- | Create new resource which manages connnections to a database.
 -}
@@ -128,7 +143,15 @@ newResource :: (DBSettings db, IConnection (ConnectionType db))
             -> IO (IORef (DBResource db)) -- ^ IORef holding created resource.
 newResource s = do
     pool <- createPool (open s) disconnect 1 3600 (maxConnections s)
-    newIORef (DBResource s M.empty pool)
+    newIORef (DBResource s M.empty (ConnectionPool pool))
+
+newFixedResource :: (DBSettings db, IConnection (ConnectionType db))
+                 => db -- ^ Settings to connect a database.
+                 -> Maybe String -- ^ Save point name if necessary.
+                 -> IO (IORef (DBResource db)) -- ^ IORef holding created resource.
+newFixedResource s sp = do
+    conn <- open s
+    newIORef (DBResource s M.empty (FixedConnection conn sp))
 
 {- | Constraint type to declare that the function has an implicit parameter `?resource` whose type is `DBResource db`.
 -}
@@ -142,6 +165,7 @@ This flag is available for users to control a transaction.
 data DBContext db = DBContext { connect :: ConnectionType db -- ^ Get a connection.
                               , status :: Bool -- ^ If true, transaction will be committed on closing context, otherwise rollbacked.
                               , resource :: IORef (DBResource db) -- ^ Resource the connection is obtained from.
+                              , savePoint :: Maybe String
                               }
 
 {- | Closes the context. This closes transaction by executing commit or rollback according to the status.
@@ -149,8 +173,10 @@ data DBContext db = DBContext { connect :: ConnectionType db -- ^ Get a connecti
 close :: (IConnection (ConnectionType db))
       => DBContext db
       -> IO ()
-close (DBContext c True _) = commit c
-close (DBContext c False _) = rollback c
+close (DBContext c True _ Nothing) = commit c
+close (DBContext c False _ Nothing) = rollback c
+close (DBContext c True _ (Just sp)) = run c ("RELEASE SAVEPOINT " ++ sp) [] >> return ()
+close (DBContext c False _ (Just sp)) = run c ("ROLLBACK TO SAVEPOINT " ++ sp) [] >> return ()
 
 {- | Constraint type to declare that the function has an implicit parameter `?db` whose type is `DBContext db`.
 -}

@@ -45,7 +45,9 @@ withTable settings table f = do
     decs <- f ts
     runIO $ do
         (DBResource _ _ p) <- readIORef r
-        destroyAllResources p
+        case p of
+            ConnectionPool p' -> destroyAllResources p'
+            FixedConnection _ _ -> return ()
     return decs
 
 decsOfColumns :: (TypeMappable db)

@@ -13,7 +13,7 @@ import Database.ORM.HDBC
 instance (DBSettings db) => Resource (DBResource db) where
     type ContextType (DBResource db) = DBContext db
 
-    newContext r = liftIO $ newIORef $ DBContext undefined True r
+    newContext r = liftIO $ newIORef $ DBContext undefined True r Nothing
 
 instance (DBSettings db) => ResourceContext (DBContext db) where
     type ResourceType (DBContext db) = DBResource db
@@ -25,6 +25,6 @@ instance (DBSettings db) => ResourceContext (DBContext db) where
     execContext c f = do
         cxt <- liftIO $ readIORef c
         r <- liftIO $ readIORef (resource cxt)
-        withResource (pool r) $ \conn -> do
+        withPool (pool r) $ \conn -> do
             liftIO $ writeIORef c (cxt { connect = conn })
             f
