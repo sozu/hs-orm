@@ -2,7 +2,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Database.ORM.Insert (
     -- * Execute insertion
@@ -10,6 +14,8 @@ module Database.ORM.Insert (
     -- * Build insert query
     , columnsAndValues
     , swapAutoIncrementalValue
+    -- * Graph utility
+    , AllInsert
 ) where
 
 import Control.Monad.State
@@ -24,6 +30,7 @@ import Data.Model.Graph
 import Data.Resource
 import Database.ORM.HDBC
 import Database.ORM.Query
+import Database.ORM.Model
 import Database.ORM.Record
 
 -- | Inserts nodes in a graph into database.
@@ -67,7 +74,7 @@ columnsAndValues graph cs ta = do
                                 Nothing -> as
 
         applyExp :: M.Map String String -> [(String, ColumnValue)] -> [(String, ColumnValue)]
-        applyExp expMap as = let app (c, cv) = (c, maybe cv RawExpression (expMap M.!? c))
+        applyExp expMap as = let app (c, cv) = let !v = maybe cv RawExpression (expMap M.!? c) in (c, v)
                              in map app as
 
 -- | Swaps auto incremented values of inserted models.
@@ -125,3 +132,10 @@ insert_ conn t cols vs = do
 
     stmt <- prepare conn (q ++ hs)
     execute stmt $ catMaybes $ map toSqlValue $ concat vs
+
+type family AllInsert g :: * where
+    AllInsert (Graph x)         = Graph ((=+)x)
+    AllInsert (Graph x :><: y)  = Graph ((=+)x) :><: AllInsert y
+    AllInsert (x :><: y)        = AllInsert x :><: AllInsert y
+    AllInsert (x :- y)          = (=+)x :- (=+)y
+    AllInsert x                 = (=+)x

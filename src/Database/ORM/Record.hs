@@ -31,8 +31,8 @@ module Database.ORM.Record (
     , AllRecord
     -- * Identity
     , Identifiable(..)
-    , PK(..)
-    , FK(..)
+    , PK(..), FK(..)
+    , FindPK, FindFK
     , ColExp
     , GetExpression(..)
 ) where

@@ -10,7 +10,7 @@ import qualified Data.Map as M
 import Data.Convertible
 import Data.Extensible
 import Database.HDBC
-import Data.Resource
+import Data.Resource hiding ((.+))
 import Database.ORM.Condition
 import Database.ORM.HDBC
 import Database.ORM.Dialect.Mock
@@ -59,7 +59,7 @@ spec = do
             let c = cond @[Extra1, Extra2] "#" "#.val * ? > #.num - ?" .+ x .+ y
             case c of
                 Condition fmt _ vs -> do
-                    fmt `shouldBe` ["", ".val * ? > ", ".num - ?"]
+                    fmt `shouldBe` ConditionFormat ["", ".val * ? > ", ".num - ?"] 2
                     vs `shouldBe` [sqlVal 2, sqlVal 3]
 
         it "Check model types by formatting" $ do
@@ -77,7 +77,8 @@ spec = do
             case c of
                 Condition fmt _ vs -> do
                     -- (#.col3 * ? < #.col4 * ?) AND ((#.col1 = ?) OR (#.col2 = ?))
-                    fmt `shouldBe` ["(", ".col3 * ? < ", ".col4 * ?) AND ((", ".col1 = ?) OR (", ".col2 = ?))"]
+                    fmt `shouldBe` AndFormat (ConditionFormat ["", ".col3 * ? < ", ".col4 * ?"] 2)
+                                             (OrFormat (ConditionFormat ["", ".col1 = ?"] 1) (ConditionFormat ["", ".col2 = ?"] 1))
                     vs `shouldBe` [sqlVal 3, sqlVal 4, sqlVal 1, sqlVal 2]
             let s = formatCondition c (Proxy :: Proxy '[Extra4, Extra3, Extra2, Extra1]) ["t4", "t3", "t2", "t1"]
             fst s `shouldBe` "(t3.col3 * ? < t4.col4 * ?) AND ((t1.col1 = ?) OR (t2.col2 = ?))"

@@ -101,7 +101,11 @@ joinTypeOf (JoinEdge _ _ r _) = getJoinType r
 
 instance Show (JoinEdge g ms) where
     show (JoinEdge _ _ _ Nothing) = ""
-    show je@(JoinEdge _ _ _ (Just j)) = jt ++ leftTable j ++ " AS " ++ leftAlias j ++ " ON " ++ leftAlias j ++ "." ++ leftColumn j ++ " = " ++ rightAlias j ++ "." ++ rightColumn j
+    show je@(JoinEdge _ _ _ (Just j)) =
+        let (t, a1, c1, a2, c2) = if leftIndex j > rightIndex j
+                then (leftTable j, leftAlias j, leftColumn j, rightAlias j, rightColumn j)
+                else (rightTable j, rightAlias j, rightColumn j, leftAlias j, leftColumn j)
+        in jt ++ t ++ " AS " ++ a1 ++ " ON " ++ a1 ++ "." ++ c1 ++ " = " ++ a2 ++ "." ++ c2
         where
             jt = case joinTypeOf je of
                     InnerJoinType -> "INNER JOIN "
@@ -127,7 +131,8 @@ arrangeJoins (ls, rs) ts = if length ls' == 0
 -- ------------------------------------------------------------
 
 -- | Arranged model types in graph `g` collected by tracing edges from model `a`.
-type EdgeTypes g a = AddSet a (ArrangeEdgeTypes (CollectEdges '[a] (Edges g)))
+--type EdgeTypes g a = AddSet a (ArrangeEdgeTypes (CollectEdges '[a] (Edges g)))
+type EdgeTypes g a = PrependSet a (ArrangeEdgeTypes (CollectEdges '[a] (Edges g)))
 
 {- | A constraint to show the model `a` can be a selecting entry from the graph `g`.
 
@@ -181,7 +186,7 @@ selectNodes pg pa conds sorts lo = do
     - For each model, the order of columns must be the same as the order of fields of the model except for foreign key columns.
     - To recover relationships between tables, foreign key column and referenced column must appear in column expressions.
 -}
-selectQuery :: forall db g p ms. (WithDB db, SelectQuery g ms, GenerateColumns p ms)
+selectQuery :: forall db g p ms ms'. (WithDB db, ms' ~ UnqualifiedModels p ms, SelectQuery g ms', GenerateColumns p ms)
             => Proxy g -- ^ Type of a graph.
             -> p ms -- ^ List of model types listed in the same order as column expressions in the query.
             -> String -- ^ Query string.
@@ -192,11 +197,11 @@ selectQuery pg gc query holder = do
     let conn = connect context
 
     let columns = generateColumns gc
-    joins <- collectJoins (Proxy :: Proxy (CollectEdges ms (Edges g))) (Proxy :: Proxy ms) (getAliases gc)
+    joins <- collectJoins (Proxy :: Proxy (CollectEdges ms' (Edges g))) (Proxy :: Proxy ms') (getAliases gc)
 
     -- TODO: 
     -- Enables appending values in column expressions to place holders.
-    execSelect pg columns joins (Proxy :: Proxy ms) query holder
+    execSelect pg columns joins (Proxy :: Proxy ms') query holder
 
 -- | Executes a query and constructs a graph holding obtained values.
 execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)
@@ -456,6 +461,16 @@ type family AddSet (a :: k) (as :: [k]) :: [k] where
     AddSet a (a ': as) = a ': as
     AddSet a (x ': as) = x ': AddSet a as
 
+type family RemoveSet (a :: k) (as :: [k]) :: [k] where
+    RemoveSet a '[]       = '[]
+    RemoveSet a (a ': as) = as
+    RemoveSet a (x ': as) = x ': RemoveSet a as
+
+type family PrependSet (a :: k) (as :: [k]) :: [k] where
+    PrependSet a '[]       = '[a]
+    PrependSet a (a ': as) = a ': RemoveSet a as
+    PrependSet a (x ': as) = a ': x ': RemoveSet a as
+
 -- | Collects edges associated with given types.
 type family CollectEdges (as :: [*]) (edges :: [k]) :: [k] where
     CollectEdges as '[] = '[]
@@ -466,8 +481,8 @@ type family CollectEdges (as :: [*]) (edges :: [k]) :: [k] where
 -- | Collects types each of which makes an edge in the edge list by paired with given type.
 type family EdgesToValue (a :: *) (e :: [k]) :: [*] where
     EdgesToValue a '[] = '[]
-    EdgesToValue a ((Edge b a) ': edges) = b ': EdgesToValue a edges
-    EdgesToValue a ((Edge a b) ': edges) = b ': EdgesToValue a edges
+    EdgesToValue a ((EdgeT b a rs) ': edges) = b ': EdgesToValue a edges
+    EdgesToValue a ((EdgeT a b rs) ': edges) = b ': EdgesToValue a edges
     EdgesToValue a (x ': edges) = EdgesToValue a edges
 
 -- | Collects edges whose one endpoint is a given type.
@@ -485,7 +500,7 @@ type family (+++) (as :: [k]) (bs :: [k]) :: [k] where
 type family (///) (as :: [k]) (bs :: [k]) :: [k] where
     (///) '[] bs = '[]
     (///) as '[] = as
-    (///) (Edge a b ': as) (Edge a b ': bs) = as /// bs
+    (///) (EdgeT a b rs ': as) (EdgeT a b rs ': bs) = as /// bs
     (///) as '[x] = as
     (///) as (x ': bs) = (as /// '[x]) /// bs
 

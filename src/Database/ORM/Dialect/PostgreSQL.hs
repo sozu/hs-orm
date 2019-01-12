@@ -46,6 +46,7 @@ instance D.DBSettings PostgreSQL where
 
 instance TypeMappable PostgreSQL where
     -- TODO not defined completely
+    mapColumnType _ "boolean" _ = [t| Bool |]
     mapColumnType _ "smallint" _ = [t| Integer |]
     mapColumnType _ "integer" _ = [t| Integer |]
     mapColumnType _ "bigint" _ = [t| Integer |]

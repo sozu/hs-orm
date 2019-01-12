@@ -18,7 +18,7 @@ import Data.Convertible
 import Data.Extensible
 import Data.Extensible.HList
 import Data.Model.Graph
-import Data.Resource
+import Data.Resource hiding ((.+))
 import Database.HDBC
 import Database.ORM.Condition
 import Database.ORM.HDBC

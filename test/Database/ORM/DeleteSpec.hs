@@ -17,7 +17,7 @@ import Data.Proxy
 import Data.Convertible
 import Data.Extensible
 import Data.Model.Graph
-import Data.Resource
+import Data.Resource hiding ((.+))
 import Database.HDBC
 import Database.ORM.HDBC
 import Database.ORM.Delete
@@ -111,7 +111,7 @@ spec = do
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
                 let c = cond @'[A] "#" "#.cola = ?" .+ "abc"
-                (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["ta", "tb"]
+                (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["tb", "ta"]
 
                 q `shouldBe` "DELETE FROM b AS tb USING a AS ta WHERE tb.b_a_id = ta.aid AND (ta.cola = ?)"
                 holder `shouldBe` [toSql "abc"]
@@ -123,7 +123,7 @@ spec = do
             withContext @'[DBContext Mock] resources $ do
                 let c = (cond @'[A] "#" "#.cola = ?" .+ "abc")
                      .& (cond @'[C, D] "#" "#.colc * 2 = #.cold")
-                (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["ta", "tb", "tc", "td"]
+                (q, holder) <- joinDeleteQuery (Proxy :: Proxy ABCDGraph) (Proxy :: Proxy B) c (tables mock M.! "b") ["tb", "ta", "tc", "td"]
 
                 q `shouldBe` "DELETE FROM b AS tb USING a AS ta, c AS tc, d AS td \
                              \WHERE tb.b_a_id = ta.aid AND tc.c_b_id = tb.bid AND td.d_b_id = tb.bid AND ((ta.cola = ?) AND (tc.colc * 2 = td.cold))"
