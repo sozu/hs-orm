@@ -9,6 +9,7 @@ module Database.ORM (
     , selectNodes
     , selectQuery
     , insertNodes
+    , AllInsert
     , updateNodes
     , deleteNodes
     , delete

@@ -239,14 +239,14 @@ instance ( GraphContainer g a
 --
 -- Returned function accepts values of primary keys in the same order as @PK@ appendix.
 -- Usage of the function is similar to @fetchOne@, show its description to know the detail.
-deleteOne :: forall g a db. (
+deleteOne :: forall a db. (
              WithDB db
            , PKConditions a (ReplicateType a (RW'KeyTypes a))
            , Identifiable a
            , Forall SqlValueConstraint (RW'KeyTypes a)
-           , Deleter g a (RW'KeyTypes a) (RW'Key a))
+           , Deleter (Graph a) a (RW'KeyTypes a) (RW'Key a))
           => Apply (RW'KeyTypes a) (IO ()) -- ^ Function to delete a record by taking primary key values.
-deleteOne = deleter @g @a @(RW'KeyTypes a) @(RW'Key a) []
+deleteOne = deleter @(Graph a) @a @(RW'KeyTypes a) @(RW'Key a) []
 
 -- ------------------------------------------------------------
 -- Helper types and functions
