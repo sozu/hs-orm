@@ -94,17 +94,22 @@ cond rep fmt = Condition (ConditionFormat (split fmt ("", [])) len) (Proxy :: Pr
 (.=&) :: forall t. Condition '[t]
       -> Condition '[t]
       -> Condition '[t]
-(.=&) (Condition f1 p vs1) (Condition f2 _ vs2) = Condition (AndFormat f1 $ zeroConsume f2) p (vs1 ++ vs2)
+(.=&) (Condition f1 p vs1) (Condition f2 _ vs2) = Condition (oneConsume $ AndFormat f1 f2) p (vs1 ++ vs2)
 
 (.=|) :: forall t. Condition '[t]
       -> Condition '[t]
       -> Condition '[t]
-(.=|) (Condition f1 p vs1) (Condition f2 _ vs2) = Condition (OrFormat f1 $ zeroConsume f2) p (vs1 ++ vs2)
+(.=|) (Condition f1 p vs1) (Condition f2 _ vs2) = Condition (oneConsume $ OrFormat f1 f2) p (vs1 ++ vs2)
 
 zeroConsume :: ConditionFormat -> ConditionFormat
 zeroConsume (ConditionFormat ss n) = ConditionFormat ss 0
 zeroConsume (AndFormat f1 f2)      = AndFormat (zeroConsume f1) (zeroConsume f2)
 zeroConsume (OrFormat f1 f2)       = OrFormat (zeroConsume f1) (zeroConsume f2)
+
+oneConsume :: ConditionFormat -> ConditionFormat
+oneConsume (ConditionFormat ss n) = ConditionFormat ss 1
+oneConsume (AndFormat f1 f2)      = AndFormat (zeroConsume f1) (oneConsume f2)
+oneConsume (OrFormat f1 f2)       = OrFormat (zeroConsume f1) (oneConsume f2)
 
 (.&?) :: forall ts us. (KnownNat (Length us))
       => Condition ts
