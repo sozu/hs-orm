@@ -88,9 +88,16 @@ showTableLockMode mode = map repl $ show mode
 
 instance Dialect Dialect' where
     type LockMode Dialect' = PGTableLockMode
+    getConnectionId = fetchConnectionId
     readTableMeta = examineTable
     readLatestSequences = latestSequences
     lockTables d mode tables = forM_ tables $ lockTable d mode
+
+fetchConnectionId _ context = do
+    stmt <- prepare (connect context) "SELECT pg_backend_pid()"
+    execute stmt []
+    row <- fetchRow stmt
+    return $ (\r -> show (fromSql (r !! 0) :: Integer)) <$> row
 
 latestSequences :: forall db. (WithDB db)
                 => Dialect' -- ^ Dialect.

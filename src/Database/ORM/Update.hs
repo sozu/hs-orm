@@ -73,7 +73,7 @@ update t keys cols = do
     let conn = connect context
     let q = updateQuery t (map fst keys) (map fst cols)
 
-    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q
+    logDWithId $ "SQL: " ++ q
 
     stmt <- prepare conn q
     execute stmt $ (map snd cols) ++ (map snd keys)

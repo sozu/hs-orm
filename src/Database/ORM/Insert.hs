@@ -128,7 +128,7 @@ insert_ conn t cols vs = do
     dialect <- getDialect
     let (q, hs) = multiInsertQuery dialect t cols vs
 
-    $(logQD' loggerTag) ?cxt $ "SQL: " ++ q ++ "...(" ++ show (length vs) ++ " holders)"
+    logDWithId $ "SQL: " ++ q ++ "...(" ++ show (length vs) ++ " holders)"
 
     stmt <- prepare conn (q ++ hs)
     execute stmt $ catMaybes $ map toSqlValue $ concat vs

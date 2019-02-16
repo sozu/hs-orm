@@ -38,9 +38,13 @@ dependencies:
 - hs-graph
 - hs-resource
 - lens
+- data-default
 
 library:
   source-dirs: src
+
+ghc-options:
+  - -ddump-splices
 
 executables:
   hs-orm-exe:

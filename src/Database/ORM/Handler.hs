@@ -39,15 +39,15 @@ restoreGraph graph = restoreGraph' graph (Proxy :: Proxy (Serialize g))
 instance (GraphFactory g) => GraphHandler g '[] where
     restoreGraph' graph p = return graph
 
-instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a, ForWhat a) => GraphHandler g (a ': as) where
+instance (GraphContainer g a, GraphHandler g as, RecordWrapper a, EdgeMap g g a, RoleForWhat (RW'Role a)) => GraphHandler g (a ': as) where
     restoreGraph' graph p = do
         let (cs, p') = serializeCursor graph (Proxy :: Proxy (a ': as))
 
         graph' <- if length cs > 0 then
                     let m = (cs !! 0) @< graph
-                    in if forInsert m then do
+                    in if roleForInsert (Proxy :: Proxy (RW'Role a)) then do
                         insertNodes graph cs 
-                    else if forUpdate m then do 
+                    else if roleForUpdate (Proxy :: Proxy (RW'Role a)) then do 
                         updateNodes graph cs
                     else 
                         return graph

@@ -41,7 +41,7 @@ module Database.ORM.Model (
     , type (:^+), type (:^-), type (:^@)
     , type (=#), type (=+), type (=/), type (=*)
     , ExtraModel(..)
-    , ForWhat(..), ForInsert(..), ForUpdate(..)
+    , RoleForWhat(..)
     -- * Relations
     , InnerJoin, LeftJoin, RightJoin
     , JoinType(..)
@@ -131,36 +131,30 @@ type family (:^+) m a :: * where
     TableModel n r m as :^+ a = TableModel n r m (a ': as)
     ExtraModel xs as :^+ a = ExtraModel xs (a ': as)
 
--- | Declares methods to define if the instance model should accept each operation.
-class ForWhat m where
-    forSelect :: m -> Bool
-    forSelect _ = True
-    forInsert :: m -> Bool
-    forInsert _ = False
-    forUpdate :: m -> Bool
-    forUpdate _ = False
+-- | Declares methods to get availabilities for insertion or update from a @ModelRole@ type.
+class RoleForWhat (r :: ModelRole) where
+    -- | Checks the role can be used for inserting operation.
+    roleForInsert :: Proxy r -- ^ A @ModelRole@ type.
+                  -> Bool -- ^ Availability for the inserting operation.
+    -- | Checks the role can be used for updating operation.
+    roleForUpdate :: Proxy r -- ^ A @ModelRole@ type.
+                  -> Bool -- ^ Availability for the updating operation.
 
-instance ForWhat (TableModel n r m as) where
-instance ForWhat (TableModel n Insert' m as) where
-    forInsert _ = True
-instance ForWhat (TableModel n Update' m as) where
-    forUpdate _ = True
-instance ForWhat (TableModel n Relate' m as) where
-    forSelect _ = False
-
-instance ForWhat (ExtraModel xs as) where
-    forInsert _ = False
-    forUpdate _ = False
-
--- | Checks the model can be used for the insertion operation.
-type family ForInsert m :: Bool where
-    ForInsert (TableModel n Insert' m as) = 'True
-    ForInsert _ = 'False
-
--- | Checks the model can be used for the update operation.
-type family ForUpdate m :: Bool where
-    ForUpdate (TableModel n Update' m as) = 'True
-    ForUpdate _ = 'False
+instance RoleForWhat Select' where
+    roleForInsert _ = False
+    roleForUpdate _ = False
+instance RoleForWhat Insert' where
+    roleForInsert _ = True
+    roleForUpdate _ = False
+instance RoleForWhat Update' where
+    roleForInsert _ = False
+    roleForUpdate _ = True
+instance RoleForWhat Relate' where
+    roleForInsert _ = False
+    roleForUpdate _ = False
+instance RoleForWhat Extra' where
+    roleForInsert _ = False
+    roleForUpdate _ = False
 
 -- ------------------------------------------------------------
 -- Relations.

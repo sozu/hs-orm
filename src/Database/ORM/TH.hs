@@ -4,11 +4,20 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Database.ORM.TH where
 
 import GHC.TypeLits
 import Control.Applicative
+import Control.Monad
+import Data.Proxy
 import Language.Haskell.TH
 import Data.Maybe (isNothing)
 import Data.Extensible
@@ -72,15 +81,11 @@ decsOfModel settings name ts = do
     let pks = map columnName $ filter isPrimary (tableColumns ts)
     fks <- mapM (\c -> infixT (litT $ strTyLit $ columnName c) '(:>) (mapColumnType settings (columnType c) (userType c)))
                 $ filter hasRelation (tableColumns ts)
-    let def = appT (appT (conT ''(:##)) (litT $ strTyLit $ tableName ts)) (appT (conT ''Record) (conT colsName))
-    let appPKs = if length pks > 0
-                    then appT (appT (conT ''(:^+)) def) (appT (conT ''PK) (strLits pks))
-                    else def
-    let appFKs = if length fks > 0
-                    then appT (appT (conT ''(:^+)) appPKs) (appT (conT ''FK) (typeList fks))
-                    else appPKs
-    model <- tySynD (mkName name) [] appFKs
-    return $ reverse $ model : columns
+    let appPKs = \s -> if length pks > 0 then appT (appT (promotedT '(:)) (appT (conT ''PK) (strLits pks))) s else s
+    let appFKs = \s -> if length fks > 0 then appT (appT (promotedT '(:)) (appT (conT ''FK) (typeList fks))) s else s
+    model <- tySynD (mkName name) [] [t| TableModel $(litT $ strTyLit (tableName ts)) Select' (Record $(conT colsName)) $(appPKs $ appFKs promotedNilT) |]
+    exts <- shrinkDefinition (mkName name) ts
+    return $ (reverse $ model : columns) ++ exts
     where
         strLits :: [String] -> TypeQ
         strLits [] = promotedNilT
@@ -123,3 +128,30 @@ columnDefinition settings (ColumnMeta {..}) = infixT (litT $ strTyLit columnName
         ct :: Bool -> TypeQ
         ct True = appT (conT ''Maybe) (mapColumnType settings columnType userType)
         ct False = mapColumnType settings columnType userType
+
+-- | Generates instance declaration of @ExtensibleModel@.
+--
+-- > type SomeModel = TableModel "table" Select' (Record '["id" :> Int, "name" :> String]) '[]
+-- > instance ExtensibleModel SomeModel where
+-- >     shrinkFor m [] (p :: Proxy ks) f = f (m ~/ shrink :: TM :^@ ks)
+-- >     shrinkFor m ("id":cs) (p :: Proxy ks) f = shrinkFor m cs (Proxy :: Proxy ("id" ': ks)) f
+-- >     shrinkFor m ("name":cs) (p :: Proxy ks) f = shrinkFor m cs (Proxy :: Proxy ("name" ': ks)) f
+shrinkDefinition :: Name
+                 -> TableMeta
+                 -> Q [Dec]
+shrinkDefinition n t = do
+    let nas = mkName "as"
+    let nm = mkName "m"
+    let nks = mkName "ks"
+    let c = cxt []
+    let funcs = funD 'shrinkFor $
+                        (clause [varP $ mkName "m", listP [], sigP (varP $ mkName "p") (appT (conT ''Proxy) (varT nks)), varP $ mkName "f"]
+                                (normalB [| f (m ~/ shrink :: $(conT n) :^@ $(varT nks)) |])
+                                []
+                        ) : ((`map` tableColumns t) $ \c ->
+                            clause [varP $ mkName "m", infixP (litP $ stringL $ columnName c) ('(:)) (varP $ mkName "cs"), sigP (varP $ mkName "p") (appT (conT ''Proxy) (varT nks)), varP $ mkName "f"]
+                                   (normalB [| $(varE 'shrinkFor) m cs (Proxy :: Proxy ($(litT $ strTyLit $ columnName c) ': $(varT nks))) f |])
+                                   []
+                        )
+    (:[]) <$> instanceD c (appT (conT ''ExtensibleModel) (conT n)) [funcs]
+

@@ -17,9 +17,15 @@ module Database.ORM.Record (
     -- * Records
     KeyConstraint
     , RecordWrapper(..)
-    , Rewrap(..)
+    , ExtensibleModel(..)
+    , withSubModel
     , rw'type
     , FieldNames(..)
+    , (~/)
+    , (=/#), (=/+), (=//), (=/*)
+    , RoleIndependent
+    , RoleExchangeable
+    , SubRecord
     -- * Fields
     , recordFields
     , recordValues
@@ -46,6 +52,7 @@ import Data.Profunctor
 import Data.Profunctor.Rep
 import Control.Comonad
 import Data.Proxy
+import Data.Default
 import Data.Aeson (ToJSON(..))
 import Data.Extensible
 import Data.Extensible.Internal
@@ -76,9 +83,15 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
     type RW'Type a :: [Assoc Symbol *]
     -- | Determines a ModelRole this record conforms to.
     type RW'Role a :: ModelRole
+    -- | Determines extra types of this record.
     type RW'Spec a :: [*]
 
-    newRecord :: [SqlValue] -> a
+    -- | Determines the role of the record is changeable by type operators.
+    type RoleExchangeability a :: Bool
+
+    -- | Creates new record from @SqlValue@s places in the order of fields. 
+    newRecord :: [SqlValue] -- ^ Values of fields.
+              -> a -- ^ New record.
 
     -- | Get an extensible record from this record model.
     getRecord :: a -- ^ A record model.
@@ -95,7 +108,7 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
     -- | Get a name of the table.
     getName :: proxy a -- ^ Proxy to this record model type.
             -> String -- ^ Table name of @a@.
-    getName p = symbolVal (Proxy :: Proxy (RW'Name a))
+    getName _ = symbolVal (Proxy :: Proxy (RW'Name a))
 
 instance (RecordWrapper a, ToJSON (Record (RW'Type a))) => ToJSON a where
     toJSON = toJSON . getRecord
@@ -157,6 +170,7 @@ instance ( FieldNames xs
     type RW'Type (TableModel n r (Record xs) as) = xs
     type RW'Role (TableModel n r (Record xs) as) = r
     type RW'Spec (TableModel n r (Record xs) as) = as
+    type RoleExchangeability (TableModel n r (Record xs) as) = 'True
     getRecord (Model m) = m
     wrapRecord = Model
     updateRecord (Model m) v = Model v
@@ -172,25 +186,108 @@ instance ( FieldNames xs
     type RW'Type (ExtraModel xs as) = xs
     type RW'Role (ExtraModel xs as) = 'Extra'
     type RW'Spec (ExtraModel xs as) = as
+    type RoleExchangeability (ExtraModel xs as) = 'False
     getRecord (ExtraModel r) = r
     wrapRecord = ExtraModel
     updateRecord (ExtraModel _) r = ExtraModel r
     newRecord vs = ExtraModel $ htabulateFor (Proxy :: Proxy (KeyValue KnownSymbol SqlValueConstraint))
                                 $ \m -> Field $ pure (fromSql (vs !! getMemberId m))
 
-class (RecordWrapper s, RecordWrapper t) => Rewrap s t where
-    (~/) :: s -> (Record (RW'Type s) -> Record (RW'Type t)) -> t
+-- | Replace a record contained in the model.
+(~/) :: (RecordWrapper s, RecordWrapper t)
+     => s -- ^ A model.
+     -> (Record (RW'Type s) -> Record (RW'Type t)) -- ^ A function to change the record.
+     -> t -- ^ Replaced model.
+(~/) s f = wrapRecord $ f $ getRecord s
 
-instance ( RecordWrapper (TableModel n r1 (Record xs) as)
-         , RecordWrapper (TableModel n r2 (Record ys) bs)
-         , FieldNames xs
-         , FieldNames ys
-         ) => Rewrap (TableModel n r1 (Record xs) as) (TableModel n r2 (Record ys) bs) where
-    (~/) s f = Model (f $ getRecord s)
-instance ( RecordWrapper (ExtraModel xs as)
-         , RecordWrapper (ExtraModel ys bs)
-         ) => Rewrap (ExtraModel xs as) (ExtraModel ys bs) where
-    (~/) s f = ExtraModel (f $ getRecord s)
+-- | Generate a model used for retrieval.
+(=/#) :: (RecordWrapper r, RoleIndependent r)
+      => r -- ^ A model.
+      -> (Record (RW'Type r) -> Record (RW'Type r)) -- ^ A function to change the record.
+      -> (=#)r -- ^ Generated model.
+(=/#) m f = m ~/ f
+
+-- | Generate a model used for insertion.
+(=/+) :: (RecordWrapper r, RoleIndependent r)
+      => r -- ^ A model.
+      -> (Record (RW'Type r) -> Record (RW'Type r)) -- ^ A function to change the record.
+      -> (=+)r -- ^ Generated model.
+(=/+) m f = m ~/ f
+
+-- | Generate a model used for update.
+(=//) :: (RecordWrapper r, RoleIndependent r)
+      => r -- ^ A model.
+      -> (Record (RW'Type r) -> Record (RW'Type r)) -- ^ A function to change the record.
+      -> (=/)r -- ^ Generated model.
+(=//) m f = m ~/ f
+
+-- | Generate a model used just for resolving relations.
+(=/*) :: (RecordWrapper r, RoleIndependent r)
+      => r -- ^ A model.
+      -> (Record (RW'Type r) -> Record (RW'Type r)) -- ^ A function to change the record.
+      -> (=*)r -- ^ Generated model.
+(=/*) m f = m ~/ f
+
+instance (Forall (KeyValue KnownSymbol SqlValueConstraint) xs, Forall (KeyValue KnownSymbol Default) xs) => Default (TableModel n r (Record xs) as) where
+    def = Model $ runIdentity $ hgenerateFor (Proxy :: Proxy (KeyValue KnownSymbol Default)) (const $ pure $ Field (pure def))
+
+type RoleIndependent m = (
+    RecordWrapper ((=#)m)
+  , RecordWrapper ((=+)m)
+  , RecordWrapper ((=/)m)
+  , RecordWrapper ((=*)m)
+  , RW'Type m ~ RW'Type ((=#)m)
+  , RW'Type m ~ RW'Type ((=+)m)
+  , RW'Type m ~ RW'Type ((=/)m)
+  , RW'Type m ~ RW'Type ((=*)m)
+  , RW'Spec m ~ RW'Spec ((=#)m)
+  , RW'Spec m ~ RW'Spec ((=+)m)
+  , RW'Spec m ~ RW'Spec ((=/)m)
+  , RW'Spec m ~ RW'Spec ((=*)m)
+  )
+
+type family RoleExchangeable m (b :: Bool) :: Constraint where
+    RoleExchangeable m 'True = ( RW'Role ((=#)m) ~ Select'
+                               , RW'Role ((=+)m) ~ Insert'
+                               , RW'Role ((=/)m) ~ Update'
+                               , RW'Role ((=*)m) ~ Relate'
+                               )
+    RoleExchangeable m 'False = ()
+
+type SubRecord m n = (
+    RecordWrapper m
+  , RecordWrapper n
+  , Include (RW'Type m) (RW'Type n)
+  , RW'Name m ~ RW'Name n
+  , RW'Role m ~ RW'Role n
+  , RW'Spec m ~ RW'Spec n
+  )
+
+class (RecordWrapper m) => ExtensibleModel m where
+    shrinkFor :: ( Include (RW'Type m) (RW'Type (m :^@ ks))
+                 , FieldNames (RW'Type m ^@ ks)
+                 , Forall (KeyValue KnownSymbol SqlValueConstraint) (RW'Type m ^@ ks)
+                 , Forall (KeyConstraint KnownSymbol) (RW'Type m ^@ ks)
+                 )
+              => m
+              -> [String]
+              -> Proxy (ks :: [Symbol])
+              -> (forall n. (SubRecord m n, RoleIndependent n, RoleExchangeable n (RoleExchangeability m)) => n -> a)
+              -> a
+
+-- | Apply function taking submodel whose fields are selected by field names from a model.
+-- This experimental function provides a generic way to shrink a model with field names determined by runtime variables.
+withSubModel :: ( ExtensibleModel m
+                , Include (RW'Type m) (RW'Type (m :^@ '[]))
+                , FieldNames (RW'Type m ^@ '[])
+                , Forall (KeyValue KnownSymbol SqlValueConstraint) (RW'Type m ^@ '[])
+                , Forall (KeyConstraint KnownSymbol) (RW'Type m ^@ '[])
+                )
+             => m -- ^ A model.
+             -> [String] -- ^ Field names.
+             -> (forall n. (SubRecord m n, RoleIndependent n, RoleExchangeable n (RoleExchangeability m)) => n -> a) -- ^ A function applied to aubmodel.
+             -> a -- ^ The result of the function.
+withSubModel m cols f = shrinkFor m (reverse cols) (Proxy :: Proxy ('[] :: [Symbol])) f
 
 -- ------------------------------------------------------------
 -- Fields.

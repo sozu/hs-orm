@@ -69,7 +69,6 @@ import Database.ORM.Model
 import Database.ORM.Record
 import Database.ORM.Condition
 import Database.ORM.Utility
-import Debug.Trace
 
 -- ------------------------------------------------------------
 -- Edges.
@@ -173,8 +172,8 @@ selectNodes pg pa conds sorts lo = do
 
     let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a (EdgeTypes g a)))
 
-    let q = createSelectQuery columns (getName pa, aliases !! index) joins w o lo
-    let holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
+    let !q = createSelectQuery columns (getName pa, aliases !! index) joins w o lo
+    let !holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
 
     execSelect pg columns joins modelTypes q holder
 
@@ -215,7 +214,7 @@ execSelect :: forall db g (ms :: [*]). (WithDB db, RowParser g ms)
 execSelect pg columns joins modelTypes query holder = do
     context <- readIORef $ contextOf @(DBContext db) ?cxt
 
-    $(logQD' loggerTag) ?cxt $ "SQL: " ++ query
+    logDWithId $ "SQL: " ++ query
 
     stmt <- prepare (connect context) query
     execute stmt holder
@@ -340,12 +339,12 @@ createSelectQuery :: (FormattedCondition c, FormattedOrderBy o)
                   -> String -- ^ Created query string.
 createSelectQuery cols (t, alias) joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
-        s = "SELECT " ++ L.intercalate ", " (L.concat cols)
-        f = " FROM " ++ t ++ " AS " ++ alias ++ " " ++ L.intercalate " " (filter (/= "") $ map show joins)
-        w = let w' = whereClause conds
-            in if w' == "" then "" else " WHERE " ++ w'
-        o = let o' = orders sorts
-            in if o' == "" then "" else " ORDER BY " ++ o'
+        s =  "SELECT " ++ L.intercalate ", " (L.concat cols)
+        f =  " FROM " ++ t ++ " AS " ++ alias ++ " " ++ L.intercalate " " (filter (/= "") $ map show joins)
+        w =  let w' = whereClause conds
+             in if w' == "" then "" else " WHERE " ++ w'
+        o =  let o' = orders sorts
+              in if o' == "" then "" else " ORDER BY " ++ o'
 
 -- | Obtains column names and join informations to construct the graph starting from a model.
 columnsAndTables :: forall db g a. (WithDB db, GraphContainer g a, SelectNodes g a (EdgeTypes g a))

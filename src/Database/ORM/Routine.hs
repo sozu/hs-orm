@@ -107,13 +107,7 @@ instance ( GraphContainer g a
 fetchOne :: forall g a db. (
             WithDB db
           , a ~ GraphTop g
-          , GraphContainer g a
-          , SelectNodes g a (EdgeTypes g a)
-          , KnownNat (Length (EdgeTypes g a))
-          , ElemIndexes (ReplicateType a (RW'KeyTypes a)) (EdgeTypes g a)
-          , PKConditions a (ReplicateType a (RW'KeyTypes a))
           , Identifiable a
-          , Forall SqlValueConstraint (RW'KeyTypes a)
           , Fetcher g a (RW'KeyTypes a) (RW'Key a)
           )
           => Apply (RW'KeyTypes a) (IO g) -- ^ Function to obtain the graph by taking primary key values.
@@ -182,8 +176,7 @@ countTable conds = countGraph @(Graph a) conds
 insertOne :: forall db r. (
              WithDB db
            , RecordWrapper r
-           , ForWhat r
-           , ForInsert r ~ 'True)
+           , RW'Role r ~ Insert')
           => r -- ^ Record to insert.
           -> IO r -- ^ Inserted record where the value of auto incremental column is filled.
 insertOne record = do
@@ -198,8 +191,7 @@ insertOne record = do
 updateOne :: forall db r. (
              WithDB db
            , RecordWrapper r
-           , ForWhat r
-           , ForUpdate r ~ 'True)
+           , RW'Role r ~ Update')
           => r -- ^ Record to update.
           -> IO () -- ^ Returns nothing.
 updateOne record = do

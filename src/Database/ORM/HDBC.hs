@@ -17,6 +17,7 @@ module Database.ORM.HDBC (
     -- * Database management
     DBURL
     , loggerTag
+    , logDWithId
     , ColumnValue(..)
     , toSqlValue
     , DBSettings(..)
@@ -60,6 +61,13 @@ type DBURL = String
 
 loggerTag :: String
 loggerTag = "Database.ORM"
+
+logDWithId :: forall db. (WithDB db)
+           => String
+           -> IO ()
+logDWithId msg = do
+    context <- readIORef $ contextOf @(DBContext db) ?cxt
+    $(logQD' "Database.ORM") ?cxt $ "(#" ++ maybe "None" id (connectionId context) ++ ")" ++ msg
 
 -- ------------------------------------------------------------
 -- Extensible SqlValue
@@ -136,8 +144,7 @@ withPool (FixedConnection c sp) f = do
     liftIO $ maybe (return 0) (\n -> run c ("SAVEPOINT " ++ n) []) sp
     f c
 
-{- | Create new resource which manages connnections to a database.
--}
+-- | Creates new resource which manages connnections to a database.
 newResource :: (DBSettings db, IConnection (ConnectionType db))
             => db -- ^ Settings to connect a database.
             -> IO (IORef (DBResource db)) -- ^ IORef holding created resource.
@@ -145,6 +152,7 @@ newResource s = do
     pool <- createPool (open s) disconnect 1 3600 (maxConnections s)
     newIORef (DBResource s M.empty (ConnectionPool pool))
 
+-- | Creates new resource which manages a given connection.
 newFixedResource :: (DBSettings db, IConnection (ConnectionType db))
                  => db -- ^ Settings to connect a database.
                  -> Maybe String -- ^ Save point name if necessary.
@@ -166,6 +174,7 @@ data DBContext db = DBContext { connect :: ConnectionType db -- ^ Get a connecti
                               , status :: Bool -- ^ If true, transaction will be committed on closing context, otherwise rollbacked.
                               , resource :: IORef (DBResource db) -- ^ Resource the connection is obtained from.
                               , savePoint :: Maybe String
+                              , connectionId :: Maybe String
                               }
 
 {- | Closes the context. This closes transaction by executing commit or rollback according to the status.
@@ -173,10 +182,10 @@ data DBContext db = DBContext { connect :: ConnectionType db -- ^ Get a connecti
 close :: (IConnection (ConnectionType db))
       => DBContext db
       -> IO ()
-close (DBContext c True _ Nothing) = commit c
-close (DBContext c False _ Nothing) = rollback c
-close (DBContext c True _ (Just sp)) = run c ("RELEASE SAVEPOINT " ++ sp) [] >> return ()
-close (DBContext c False _ (Just sp)) = run c ("ROLLBACK TO SAVEPOINT " ++ sp) [] >> return ()
+close (DBContext c True _ Nothing _) = commit c
+close (DBContext c False _ Nothing _) = rollback c
+close (DBContext c True _ (Just sp) _) = run c ("RELEASE SAVEPOINT " ++ sp) [] >> return ()
+close (DBContext c False _ (Just sp) _) = run c ("ROLLBACK TO SAVEPOINT " ++ sp) [] >> return ()
 
 {- | Constraint type to declare that the function has an implicit parameter `?db` whose type is `DBContext db`.
 -}
@@ -210,7 +219,7 @@ saveSchema :: forall db. (WithDB db)
 saveSchema t meta = do
     cxt <- readIORef $ contextOf @(DBContext db) ?cxt
     let res = resource cxt
-    $(logQD' "Database.ORM") ?cxt $ "HDBC: Save schema of '" ++ t ++ "'"
+    logDWithId $ "HDBC: Save schema of " ++ t
     modifyIORef res (\r -> r { schema = M.insert t meta (schema r)})
 
 -- ------------------------------------------------------------
@@ -224,8 +233,15 @@ This class should be implemented for each RDBMS.
 class Dialect d where
     type LockMode d :: *
 
-    {- | Obtains a schema of a table.
-    -}
+    -- | Returns a string representation which identifies the current connection.
+    -- If DBMS does not supply API to obtain the identifier, this function returns @Nothing@.
+    getConnectionId :: (IConnection (ConnectionType  db), DialectType db ~ d)
+                    => d
+                    -> DBContext db
+                    -> IO (Maybe String)
+    getConnectionId _ _ = return Nothing
+
+    -- | Obtains a schema of a table.
     readTableMeta :: (WithDB db, DialectType db ~ d)
                   => d -- ^ Dialect.
                   -> String -- ^ Table name.
@@ -238,6 +254,7 @@ class Dialect d where
                         -> Int -- ^ Inserted records by the latest insert query.
                         -> IO [Int] -- ^ Generated values on the latest insert query.
 
+    -- | Generates a query and place holder string corresponding to a record in insertion query.
     multiInsertQuery :: d -- ^ Dialect.
                      -> TableMeta -- ^ Table schema.
                      -> [String] -- ^ Column names to insert.
@@ -253,10 +270,11 @@ class Dialect d where
                                 Qualified v -> exp v
                 in "(" ++ L.intercalate ", " (map exp cvs) ++ ")"
 
+    -- | Executes a statement to lock tables.
     lockTables :: (WithDB db, DialectType db ~ d)
-               => d
-               -> LockMode d
-               -> [String]
+               => d -- ^ Dialect.
+               -> LockMode d -- ^ Lock mode defined by the dialect.
+               -> [String] -- ^ Table names.
                -> IO ()
 
 -- | Shortcut function to get dialect instance from DBContext.
