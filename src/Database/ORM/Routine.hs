@@ -35,6 +35,7 @@ import Database.ORM.Query
 import Database.ORM.Select
 import Database.ORM.Delete
 import Database.ORM.Handler
+import Database.ORM.Functionality
 import Database.ORM.Utility
 import Debug.Trace
 
@@ -64,7 +65,7 @@ executeSQL_ sql holder = executeSQL sql holder >> return ()
 -- ------------------------------------------------------------
 
 class Fetcher g a (args :: [*]) (keys :: [Symbol]) where
-    fetcher :: (WithDB db) => [(String, SqlValue)] -> Apply args (IO g)
+    fetcher :: (WithDB db, ApplyRecordLock db (RW'Spec a)) => [(String, SqlValue)] -> Apply args (IO g)
 
 instance ( GraphContainer g a
          , SelectNodes g a (EdgeTypes g a)
@@ -108,6 +109,7 @@ fetchOne :: forall g a db. (
             WithDB db
           , a ~ GraphTop g
           , Identifiable a
+          , ApplyRecordLock db (RW'Spec a)
           , Fetcher g a (RW'KeyTypes a) (RW'Key a)
           )
           => Apply (RW'KeyTypes a) (IO g) -- ^ Function to obtain the graph by taking primary key values.
@@ -144,6 +146,7 @@ countGraph :: forall g g' a' (ts :: [*]) db. (
             , GraphContainer g' a'
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
+            , ApplyRecordLock db (RW'Spec a')
             , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
             )
             => Condition ts -- ^ Conditions.
@@ -162,6 +165,7 @@ countTable :: forall a a' g' (ts :: [*]) db. (
             , RecordWrapper a'
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
+            , ApplyRecordLock db (RW'Spec a')
             , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
             )
             => Condition ts -- ^ Conditions.

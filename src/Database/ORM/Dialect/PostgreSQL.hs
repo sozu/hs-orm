@@ -1,5 +1,6 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
@@ -10,6 +11,7 @@ module Database.ORM.Dialect.PostgreSQL (
     WithDB'
     , PostgreSQL(..)
     , PGTableLockMode(..)
+    , PGRecordLockMode(..)
 ) where
 
 import qualified Data.List as L
@@ -26,6 +28,7 @@ import Database.HDBC.PostgreSQL
 import Data.Maybe (maybe, catMaybes)
 import Database.ORM.HDBC hiding (DBSettings(..))
 import Database.ORM.Query
+import Database.ORM.Functionality
 import Database.ORM.TH
 import qualified Database.ORM.HDBC as D (DBSettings(..))
 
@@ -79,6 +82,21 @@ data PGTableLockMode = ACCESS_SHARE
                      | ACCESS_EXCLUSIVE
                      deriving (Eq, Show)
 
+data PGRecordLockMode = ForKeyShare
+                      | ForShare
+                      | ForNoKeyUpdate
+                      | ForUpdate
+                      deriving (Eq, Show)
+
+instance QualifyRecordLock 'ForKeyShare where
+    qualifyRecordLock _ query = query ++ " FOR KEY SHARE"
+instance QualifyRecordLock 'ForShare where
+    qualifyRecordLock _ query = query ++ " FOR SHARE"
+instance QualifyRecordLock 'ForNoKeyUpdate where
+    qualifyRecordLock _ query = query ++ " FOR NO KEY UPDATE"
+instance QualifyRecordLock 'ForUpdate where
+    qualifyRecordLock _ query = query ++ " FOR UPDATE"
+
 showTableLockMode :: PGTableLockMode
                   -> String
 showTableLockMode mode = map repl $ show mode
@@ -87,7 +105,8 @@ showTableLockMode mode = map repl $ show mode
         repl c = c
 
 instance Dialect Dialect' where
-    type LockMode Dialect' = PGTableLockMode
+    type TableLockMode Dialect' = PGTableLockMode
+    type RecordLockMode Dialect' = PGRecordLockMode
     getConnectionId = fetchConnectionId
     readTableMeta = examineTable
     readLatestSequences = latestSequences

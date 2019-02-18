@@ -6,6 +6,7 @@ module Database.ORM (
     , module Database.ORM.Condition
     , module Database.ORM.Query
     , module Database.ORM.Handler
+    , module Database.ORM.Functionality
     , selectNodes
     , selectQuery
     , insertNodes
@@ -31,5 +32,6 @@ import Database.ORM.Select
 import Database.ORM.Insert
 import Database.ORM.Update
 import Database.ORM.Delete
+import Database.ORM.Functionality
 import Database.ORM.TH
 import Database.ORM.Routine

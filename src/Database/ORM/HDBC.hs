@@ -231,7 +231,8 @@ saveSchema t meta = do
 This class should be implemented for each RDBMS.
 -}
 class Dialect d where
-    type LockMode d :: *
+    type TableLockMode d :: *
+    type RecordLockMode d :: *
 
     -- | Returns a string representation which identifies the current connection.
     -- If DBMS does not supply API to obtain the identifier, this function returns @Nothing@.
@@ -273,7 +274,7 @@ class Dialect d where
     -- | Executes a statement to lock tables.
     lockTables :: (WithDB db, DialectType db ~ d)
                => d -- ^ Dialect.
-               -> LockMode d -- ^ Lock mode defined by the dialect.
+               -> TableLockMode d -- ^ Lock mode defined by the dialect.
                -> [String] -- ^ Table names.
                -> IO ()
 

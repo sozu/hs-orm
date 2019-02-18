@@ -1,8 +1,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DataKinds #-}
 
 module Database.ORM.Dialect.Mock (
     Mock(..)
+  , MockRecordLock(..)
   , latestExecution
 ) where
 
@@ -12,6 +14,7 @@ import Data.Maybe (maybe)
 import Database.HDBC
 import Database.HDBC.Statement
 import qualified Database.ORM.HDBC as D
+import Database.ORM.Functionality
 
 data Mock = Mock { dbUrl :: D.DBURL
                  , tables :: M.Map String D.TableMeta
@@ -31,10 +34,17 @@ instance D.DBSettings Mock where
 
 data Dialect = Dialect Mock
 
-data LockMock
+data MockTableLock
+data MockRecordLock = Exclusive | Shared
+
+instance QualifyRecordLock 'Exclusive where
+    qualifyRecordLock _ query = query ++ " FOR UPDATE"
+instance QualifyRecordLock 'Shared where
+    qualifyRecordLock _ query = query ++ " FOR SHARE"
 
 instance D.Dialect Dialect where
-    type LockMode Dialect = LockMock
+    type TableLockMode Dialect = MockTableLock
+    type RecordLockMode Dialect = MockRecordLock
     readTableMeta (Dialect s) t = return $ maybe (D.TableMeta t []) id $ M.lookup t (tables s)
     readLatestSequences _ _ _ = return []
     lockTables _ _ _ = return ()

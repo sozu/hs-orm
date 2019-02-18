@@ -68,6 +68,7 @@ import Database.ORM.Query
 import Database.ORM.Model
 import Database.ORM.Record
 import Database.ORM.Condition
+import Database.ORM.Functionality
 import Database.ORM.Utility
 
 -- ------------------------------------------------------------
@@ -152,7 +153,7 @@ type SelectQuery g ms = (Joins g (CollectEdges ms (Edges g)) ms, RowParser g ms,
     Starting from a model which is specified by second argument,
     model types in the graph is collected and tables of those models are joined according to join informations defined in the graph.
 -}
-selectNodes :: forall db g a o ts us. (WithDB db, SelectNodes g a (EdgeTypes g a), KnownNat (Length (EdgeTypes g a)), ElemIndexes ts (EdgeTypes g a), ElemIndexes us (EdgeTypes g a))
+selectNodes :: forall db g a o ts us. (WithDB db, SelectNodes g a (EdgeTypes g a), ApplyRecordLock db (RW'Spec a), KnownNat (Length (EdgeTypes g a)), ElemIndexes ts (EdgeTypes g a), ElemIndexes us (EdgeTypes g a))
             => Proxy g -- ^ Type of a graph.
             -> Proxy a -- ^ Starting type of a model in the graph.
             -> Condition ts -- ^ Conditions.
@@ -172,7 +173,9 @@ selectNodes pg pa conds sorts lo = do
 
     let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a (EdgeTypes g a)))
 
-    let !q = createSelectQuery columns (getName pa, aliases !! index) joins w o lo
+    let !q = recordLockQuery (Proxy :: Proxy db)
+                             (Proxy :: Proxy (RW'Spec a))
+                             (createSelectQuery columns (getName pa, aliases !! index) joins w o lo)
     let !holder = whereValues w ++ maybe [] (\(l, o) -> [toSql l, toSql o]) lo
 
     execSelect pg columns joins modelTypes q holder
