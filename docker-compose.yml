@@ -1,0 +1,15 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:10
+    ports:
+      - 15432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/hs-orm
+    volumes:
+      - hs_orm_postgres:/var/lib/postgresql/data/hs-orm
+      - ./postgres/initdb.d:/docker-entrypoint-initdb.d
+    container_name: hs_orm_postgres
+volumes:
+  hs_orm_postgres:

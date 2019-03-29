@@ -57,6 +57,17 @@ executables:
     dependencies:
     - hs-orm
 
+  hs-orm-profile:
+    main:                 Main.hs
+    source-dirs:          profile
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    - -fomit-interface-pragmas
+    dependencies:
+    - hs-orm
+
 tests:
   hs-orm-test:
     main:                Spec.hs

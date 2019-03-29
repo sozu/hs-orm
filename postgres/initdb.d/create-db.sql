@@ -1,0 +1,1 @@
+CREATE DATABASE hs_orm ENCODING = 'UTF-8';
