@@ -214,7 +214,7 @@ spec = do
             (c, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                         rowToRecord (tableMap M.! "a") [("aid", SqlNull), ("cola", SqlNull)] :: StateT ABCDGraph IO (Maybe (Cursor A))
             c `shouldSatisfy` isNothing
-            length (values g :: [A]) `shouldBe` 0
+            length (valuesOf @A g) `shouldBe` 0
                         
         it "Record whose fields are in random order" $ do
             (c, g) <- flip runStateT (newGraph :: Graph R) $ do
@@ -315,9 +315,9 @@ spec = do
                         addEdge cursors (JoinEdge (Proxy :: Proxy B) (Proxy :: Proxy A) (Proxy :: Proxy '[]) Nothing)
                         addEdge cursors (JoinEdge (Proxy :: Proxy C) (Proxy :: Proxy B) (Proxy :: Proxy '[]) Nothing)
 
-            length (values g' :: [B :- A]) `shouldBe` 1
-            length (values g' :: [C :- B]) `shouldBe` 1
-            length (values g' :: [D :- B]) `shouldBe` 0
+            length (valuesOf @(B :- A) g') `shouldBe` 1
+            length (valuesOf @(C :- B) g') `shouldBe` 1
+            length (valuesOf @(D :- B) g') `shouldBe` 0
 
         it "Edge associated with missing cursor" $ do
             let mc c = MaybeCursor (Just c)
@@ -331,8 +331,8 @@ spec = do
                         addEdge cursors (JoinEdge (Proxy :: Proxy B) (Proxy :: Proxy A) (Proxy :: Proxy '[]) Nothing)
                         addEdge cursors (JoinEdge (Proxy :: Proxy C) (Proxy :: Proxy B) (Proxy :: Proxy '[]) Nothing)
 
-            length (values g' :: [B :- A]) `shouldBe` 1
-            length (values g' :: [C :- B]) `shouldBe` 0
+            length (valuesOf @(B :- A) g') `shouldBe` 1
+            length (valuesOf @(C :- B) g') `shouldBe` 0
 
     describe "Query creation" $ do
         it "With all kinds of clauses" $ do

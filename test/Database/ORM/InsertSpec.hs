@@ -95,7 +95,7 @@ spec = do
             (cursors, g) <- flip runStateT (newGraph :: Graph A :><: B) $ do
                                 forM [1..5] $ \i -> (+<<) (Model (#aid @= i <: #cola @= (i * 2) <: emptyRecord) :: A)
             let g' = swapAutoIncrementalValue g (tables mock M.! "a") cursors ais
-            let as = values g' :: [A] in do
+            let as = valuesOf @A g' in do
                 map (\v -> view #aid (getRecord v)) as `shouldBe` ais
                 map (\v -> view #cola (getRecord v)) as `shouldBe` [2, 4, 6, 8, 10]
 
@@ -104,7 +104,7 @@ spec = do
             (cursors, g) <- flip runStateT (newGraph :: Graph A :><: B) $ do
                                 forM [1..5] $ \i -> (+<<) (Model (#bid @= i <: #colb @= (i * 2) <: emptyRecord) :: B)
             let g' = swapAutoIncrementalValue g (tables mock M.! "b") cursors ais
-            let bs = values g' :: [B] in do
+            let bs = valuesOf @B g' in do
                 map (\v -> view #bid (getRecord v)) bs `shouldBe` [1, 2, 3, 4, 5]
                 map (\v -> view #colb (getRecord v)) bs `shouldBe` ais
 

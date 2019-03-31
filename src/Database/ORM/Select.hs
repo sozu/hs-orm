@@ -260,7 +260,7 @@ type CursorFindable g t a b = (FindCursor a (EdgeTypes g t), FindCursor b (EdgeT
     The list contains each cursor in Maybe context and it is retained to the result.
     In that context, Nothing means no relational record is found.
 -}
-class FindCursor a (as :: [*]) where
+class FindCursor (a :: *) (as :: [*]) where
     findCursor :: HList MaybeCursor as -> Proxy a -> Maybe (Cursor a)
 
 instance FindCursor a '[] where
@@ -306,7 +306,7 @@ rowToRecord t row
     | L.all (\v -> SqlNull == snd v) row = return Nothing
     | otherwise = do
         let values = let m = M.fromList row in map (m M.!) $ fieldNames (Proxy :: Proxy (RW'Type a))
-        let v = newRecord values :: a
+        let v = newRecord @a values
         c <- findInGraph t v
         return $ Just c
 
