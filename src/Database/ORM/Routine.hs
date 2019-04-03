@@ -153,7 +153,7 @@ countGraph :: forall g g' a' (ts :: [*]) db. (
             -> IO Integer -- ^ The number of rows.
 countGraph conds = do
     graph <- selectNodes (Proxy :: Proxy g') (Proxy :: Proxy a') (countCondition conds) (../) Nothing
-    return $ view #count $ (values graph :: [CountModel]) !! 0
+    return $ view #count $ (valuesOf @CountModel graph) !! 0
 
 -- | Counts the number of rows of a table.
 --
@@ -185,7 +185,7 @@ insertOne :: forall db r. (
           -> IO r -- ^ Inserted record where the value of auto incremental column is filled.
 insertOne record = do
     graph <- restoreGraph . fst $ record +< (newGraph :: Graph r)
-    return $ head $ (values graph :: [r])
+    return $ head $ (valuesOf @r graph)
 
 -- ------------------------------------------------------------
 -- Update
