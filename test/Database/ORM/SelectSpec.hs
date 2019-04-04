@@ -104,7 +104,7 @@ spec = do
             r <- newResource mock
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
-                joins <- collectJoins (Proxy :: Proxy (CollectEdges ABCD (Edges ABCDGraph)))
+                joins <- collectJoins (Proxy :: Proxy (Edges ABCDGraph))
                                       (Proxy :: Proxy ABCD)
                                       ["ta", "tb", "tc", "td"] :: IO [JoinEdge ABCDGraph ABCD]
                 map show joins `shouldBe` [ "INNER JOIN b AS tb ON tb.b_a_id = ta.aid"
@@ -117,7 +117,7 @@ spec = do
             r <- newResource mock
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
-                joins <- collectJoins (Proxy :: Proxy (CollectEdges WithExtra (Edges WithExtraGraph)))
+                joins <- collectJoins (Proxy :: Proxy (Edges WithExtraGraph))
                                       (Proxy :: Proxy WithExtra)
                                       ["ta", "tb", "tc", "td"] :: IO [JoinEdge WithExtraGraph WithExtra]
                 map show joins `shouldBe` [ "INNER JOIN b AS tb ON tb.b_a_id = ta.aid"
@@ -327,7 +327,7 @@ spec = do
                         b1 <- (+<<) (Model (#bid @= 1 <: #colb @= "b1" <: emptyRecord) :: B)
                         d1 <- (+<<) (Model (#did @= 1 <: #cold @= "d1" <: emptyRecord) :: D)
 
-                        let cursors = mc a1 `HCons` mc b1 `HCons` MaybeCursor Nothing `HCons` mc d1 `HCons` HNil
+                        let cursors = mc a1 `HCons` mc b1 `HCons` MaybeCursor (Nothing :: Maybe (Cursor C)) `HCons` mc d1 `HCons` HNil
                         addEdge cursors (JoinEdge (Proxy :: Proxy B) (Proxy :: Proxy A) (Proxy :: Proxy '[]) Nothing)
                         addEdge cursors (JoinEdge (Proxy :: Proxy C) (Proxy :: Proxy B) (Proxy :: Proxy '[]) Nothing)
 
@@ -400,7 +400,7 @@ headCursor :: HList MaybeCursor (a ': as)
            -> (Maybe (Cursor a), HList MaybeCursor as)
 headCursor (c `HCons` cs) = (getCursor c, cs)
 
-queryWithComponents :: (ElemIndexes ts ABCD, ElemIndexes us ABCD)
+queryWithComponents :: (ContainsAll ABCD ts NoConstraint, ContainsAll ABCD us NoConstraint)
                     => Condition (ts :: [*])
                     -> OrderBy (us :: [*])
                     -> LimitOffset

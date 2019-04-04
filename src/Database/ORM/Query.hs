@@ -218,14 +218,14 @@ instance UpdateSort t (t ': t1 ': ts) where
     (./~) o (OrderBy pts (s:cs) (st:sts)) = o ./ OrderBy (Proxy :: Proxy (t1 ': ts)) cs sts
 
 -- | Formats order by clause for a query by inserting aliases according to model types.
-formatOrderBy :: (ElemIndexes ts as)
+formatOrderBy :: (ContainsAll' as ts)
               => OrderBy ts -- ^ Sorting rule.
               -> Proxy (as :: [*]) -- ^ List of model types arranged in the same order as aliases.
               -> [String] -- ^ Aliases of model types.
               -> [(String, SortType)] -- ^ List of pairs of column name and sorting order.
 formatOrderBy (OrderBy pts cs sts) p aliases = filter (\(c, st) -> st /= Unsort) $ map (\(t, c, st) -> (t ++ "." ++ c, st)) $ zip3 tables cs sts
     where
-        tables = map (aliases !!) (elemIndexes pts p)
+        tables = map (aliases !!) (mapEach' const p pts)
 
 -- | Declares methods to get column name for sort and the order.
 class FormattedOrderBy o where

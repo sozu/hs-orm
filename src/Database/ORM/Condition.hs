@@ -125,7 +125,7 @@ oneConsume (OrFormat f1 f2)       = OrFormat (zeroConsume f1) (oneConsume f2)
 (.|?) c (Just c') = c .| c'
 (.|?) c _         = c .| cond @us "" ""
 
-formatCondition :: (ElemIndexes ts as)
+formatCondition :: (ContainsAll' as ts)
                 => Condition ts
                 -> Proxy (as :: [*])
                 -> [String]
@@ -133,7 +133,7 @@ formatCondition :: (ElemIndexes ts as)
 formatCondition (Condition fmt pts vs) p aliases = (fst $ format' fmt 0, vs)
     where
         tables :: [String]
-        tables = map (aliases !!) (elemIndexes pts p)
+        tables = map (aliases !!) (mapEach' const p pts)
 
         format' :: ConditionFormat -> Int -> (String, Int)
         format' (ConditionFormat ss n) index = let alias i = tables !! (if n == 0 then index else if i < n then (index + i) else (index + n - 1))

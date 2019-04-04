@@ -69,7 +69,7 @@ class Fetcher g a (args :: [*]) (keys :: [Symbol]) where
 
 instance ( GraphContainer g a
          , SelectNodes g a (EdgeTypes g a)
-         , ElemIndexes (ReplicateType a (RW'KeyTypes a)) (EdgeTypes g a)
+         , ContainsAll' (EdgeTypes g a) (ReplicateType a (RW'KeyTypes a))
          , PKConditions a (ReplicateType a (RW'KeyTypes a))
          , KnownNat (Length (EdgeTypes g a))
          , Forall SqlValueConstraint (RW'KeyTypes a)
@@ -147,7 +147,7 @@ countGraph :: forall g g' a' (ts :: [*]) db. (
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
             , ApplyRecordLock db (RW'Spec a')
-            , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
+            , ContainsAll' (EdgeTypes g' a') (AllRelate ts)
             )
             => Condition ts -- ^ Conditions.
             -> IO Integer -- ^ The number of rows.
@@ -167,6 +167,7 @@ countTable :: forall a a' g' (ts :: [*]) db. (
             , KnownNat (Length (EdgeTypes g' a'))
             , ApplyRecordLock db (RW'Spec a')
             , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
+            , ContainsAll' (EdgeTypes g' a') (AllRelate ts)
             )
             => Condition ts -- ^ Conditions.
             -> IO Integer -- ^ The number of rows.
