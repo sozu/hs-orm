@@ -83,11 +83,10 @@ type Deletable g a ts = ( GraphContainer g a
                         , RecordWrapper a
                         , AllRecord (S.EdgeTypes g a)
                         , AllRecord ts
-                        , ListTables (S.EdgeTypes g a)
                         , ForEachType (S.EdgeTypes g a) RecordWrapper
                         , S.Joins g (S.Edges g) (S.EdgeTypes g a)
-                        , KnownNat (ElemIndex a (S.EdgeTypes g a))
-                        , ContainsAll (S.EdgeTypes g a) ts NoConstraint
+                        , Contains (S.EdgeTypes g a) a
+                        , ContainsAll' (S.EdgeTypes g a) ts
                         )
 
 {- | Deletes records selected by condition.
@@ -147,10 +146,9 @@ joinDeleteQuery :: forall db g a ts. (WithDB db, Deletable g a ts, RecordWrapper
 joinDeleteQuery pg pa conds t aliases = do
     joins <- S.collectJoins (Proxy :: Proxy (S.Edges g)) (Proxy :: Proxy (S.EdgeTypes g a)) aliases :: IO [S.JoinEdge g (S.EdgeTypes g a)]
 
-    let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a (S.EdgeTypes g a)))
+    let index = indexOf 0 (Proxy :: Proxy (S.EdgeTypes g a)) (Proxy :: Proxy a)
 
-    --let usings = filter (\(u, _) -> u /= tableName t) $ zip (listTables (Proxy :: Proxy (S.EdgeTypes g a))) aliases
-    let usings = filter (\(u, _) -> u /= tableName t) $ zip (listTables' (Proxy :: Proxy (S.EdgeTypes g a))) aliases
+    let usings = filter (\(u, _) -> u /= tableName t) $ zip (listTables (Proxy :: Proxy (S.EdgeTypes g a))) aliases
 
     let c = formatCondition conds (Proxy :: Proxy (S.EdgeTypes g a)) aliases
 
@@ -171,17 +169,7 @@ joinDeleteQuery pg pa conds t aliases = do
 
     return (q, whereValues c)
 
-listTables' :: (ForEachType as RecordWrapper)
+listTables :: (ForEachType as RecordWrapper)
             => Proxy as
             -> [String]
-listTables' p = forEachType 0 (\i -> getName) p (Proxy :: Proxy RecordWrapper)
-
--- | Declares a method to get table names specified by a list of model types.
-class ListTables (as :: [*]) where
-    listTables :: Proxy as -> [String]
-
-instance ListTables '[] where
-    listTables _ = []
-
-instance (ListTables as, RecordWrapper a) => ListTables (a ': as) where
-    listTables _ = getName (Proxy :: Proxy a) : listTables (Proxy :: Proxy as)
+listTables p = forEachType 0 (\i -> getName) p (Proxy :: Proxy RecordWrapper)
