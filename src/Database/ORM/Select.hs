@@ -433,7 +433,7 @@ type family Edges' g :: [*] where
     Edges' _ = '[]
 
 type family ArrangeEdges g (a :: *) :: [*] where
-    ArrangeEdges g a = a ': ArrangeEdges' '[] (Reverse (Edges' g)) 'True '[a]
+    ArrangeEdges g a = a ': Nub (ArrangeEdges' '[] (Edges g) 'True '[a])
 
 type family ArrangeEdges' (acc :: [*]) (edges :: [*]) (from :: Bool) (as :: [*]) :: [*] where
     ArrangeEdges' acc edges from '[] = '[]
@@ -445,3 +445,11 @@ type family ArrangeEdges' (acc :: [*]) (edges :: [*]) (from :: Bool) (as :: [*])
     ArrangeEdges' acc (EdgeT b a rs ': edges) 'False (a ': as) = b ': ArrangeEdges' acc edges 'False (a ': b ': as)
     ArrangeEdges' acc (e ': edges) 'False (a ': as) = ArrangeEdges' (e ': acc) edges 'False (a ': as)
     ArrangeEdges' acc '[] 'False (a ': as) = ArrangeEdges' '[] (Reverse acc) 'True (Reverse as)
+
+type family Nub (as :: [*]) :: [*] where
+    Nub as = Reverse (Nub' as '[] '[])
+type family Nub' (as :: [*]) (xs :: [*]) (rs :: [*]) :: [*] where
+    Nub' '[] xs rs = rs
+    Nub' (a ': as) '[] rs = Nub' as (a ': rs) (a ': rs)
+    Nub' (a ': as) (a ': xs) rs = Nub' as rs rs
+    Nub' (a ': as) (x ': xs) rs = Nub' (a ': as) xs rs
