@@ -15,6 +15,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Database.ORM.Select (
     -- * Execute select
@@ -49,12 +50,14 @@ module Database.ORM.Select (
     , findCursor'
 ) where
 
+import Data.Time.LocalTime (ZonedTime, zonedTimeToLocalTime)
 import GHC.TypeLits
 import Control.Applicative
 import Control.Monad.State
+import Control.Monad.IO.Class
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (maybe, isJust, fromJust)
+import Data.Maybe (maybe, isJust, fromJust, catMaybes)
 import Data.Convertible
 import Data.IORef
 import Data.Proxy
@@ -163,9 +166,13 @@ execSelect pg columns joins modelTypes query holder = do
     execute stmt holder
     rows <- fetchAllRowsAL stmt
 
+    resolver <- newIORef (M.empty :: PKResolver)
+
     (_, graph) <- flip runStateT (newGraph :: g) $ do
                     forM_ rows $ \r -> do
-                        cs <- parseRow modelTypes $ sep r columns
+                        res <- liftIO $ readIORef resolver
+                        (cs, res') <- parseRow modelTypes (sep r columns) res
+                        liftIO $ writeIORef resolver res'
                         addRelations cs joins
 
     return graph
@@ -214,47 +221,85 @@ class (GraphFactory g) => RowParser g (as :: [*]) where
     parseRow :: (WithDB db)
              => Proxy as -- ^ List of model types deciding the type a value should be converted to.
              -> [[(String, SqlValue)]] -- ^ Pairs of column name and value in a row.
-             -> StateT g IO (HList MaybeCursor as) -- ^ Returns list of cursors.
+             -> PKResolver
+             -> StateT g IO (HList MaybeCursor as, PKResolver) -- ^ Returns list of cursors.
 
 instance (GraphFactory g) => RowParser g '[] where
-    parseRow _ _ = return HNil
+    parseRow _ _ r = return (HNil, r)
 
 instance (RowParser g as, GraphContainer g a, RecordWrapper a) => RowParser g (a ': as) where
-    parseRow _ (vs:values) = do
+    parseRow _ (vs:values) r = do
         t <- liftIO $ readSchema $ getName (Proxy :: Proxy a)
-        c <- rowToRecord t vs :: StateT g IO (Maybe (Cursor a))
-        cs <- parseRow (Proxy :: Proxy as) values
-        return $ MaybeCursor c `HCons` cs
+        (c, r') <- rowToRecord t vs r (length values)
+        (cs, r'') <- parseRow (Proxy :: Proxy as) values r'
+        return $ (MaybeCursor c `HCons` cs, r'')
 
 -- | Converts values in a row into a cursor of given table.
 rowToRecord :: forall g a. (GraphContainer g a, RecordWrapper a)
             => TableMeta -- ^ Table schema.
             -> [(String, SqlValue)] -- ^ Pairs of column name and value in a row.
-            -> StateT g IO (Maybe (Cursor a)) -- ^ Returns a cursor unless all columns are `SqlNull`.
-rowToRecord t row
-    | L.all (\v -> SqlNull == snd v) row = return Nothing
+            -> PKResolver
+            -> Int
+            -> StateT g IO (Maybe (Cursor a), PKResolver) -- ^ Returns a cursor unless all columns are `SqlNull`.
+rowToRecord t row r k
+    | L.all (\v -> SqlNull == snd v) row = return (Nothing, r)
     | otherwise = do
         let values = let m = M.fromList row in map (m M.!) $ fieldNames (Proxy :: Proxy (RW'Type a))
         let v = newRecord @a values
-        c <- findInGraph t v
-        return $ Just c
+        (c, r') <- findInGraph t v r k
+        return $ (Just c, r')
+
+instance Eq ZonedTime where
+    (==) t1 t2 = zonedTimeToLocalTime t1 == zonedTimeToLocalTime t2
+instance Ord ZonedTime where
+    (<=) t1 t2 = zonedTimeToLocalTime t1 <= zonedTimeToLocalTime t2
+deriving instance Ord SqlValue
+
+type PKResolver = M.Map Int (M.Map [SqlValue] Int)
+
+resolvePK :: PKResolver
+          -> Int
+          -> [SqlValue]
+          -> Maybe Int
+resolvePK r t vs = (r M.!? t) >>= (M.!? vs)
+
+appendPKResolver :: PKResolver
+                 -> Int
+                 -> [SqlValue]
+                 -> Int
+                 -> PKResolver
+appendPKResolver r t vs i = M.alter f t r
+    where
+        f :: Maybe (M.Map [SqlValue] Int) -> Maybe (M.Map [SqlValue] Int)
+        f Nothing = Just $ M.fromList [(vs, i)]
+        f (Just m) = Just $ M.insert vs i m
 
 -- | Finds a model which has the same primary key as given model, and if no model is found, inserts the model into the graph.
 findInGraph :: (GraphContainer g a, RecordWrapper a, Monad m)
             => TableMeta -- ^ Table schema.
             -> a -- ^ Model to insert if the same model is not found.
-            -> StateT g m (Cursor a) -- ^ Returns the cursor to the model which is found or inserted.
-findInGraph t v = do
-    c <- (?<<) match 
-    case c of
-        Just c' -> return c'
-        Nothing -> (+<<) v
-    where
-        pks = filter isPrimary (tableColumns t)
-        match v' = if length pks > 0
-                    then let pkv x = [fieldValue (getRecord x) (columnName c) | c <- pks]
-                         in length (pkv v) /= 0 && pkv v == pkv v'
-                    else False
+            -> PKResolver
+            -> Int
+            -> StateT g m (Cursor a, PKResolver) -- ^ Returns the cursor to the model which is found or inserted.
+findInGraph t v r k = do
+    let pkv = catMaybes [fieldValue (getRecord v) (columnName c) | c <- filter isPrimary (tableColumns t)]
+    case resolvePK r k pkv of
+        Just i -> return $ (Cursor i, r)
+        Nothing -> do
+            c <- (+<<) v
+            let r' = appendPKResolver r k pkv (cursorIndex c)
+            return (c, r')
+--findInGraph t v = do
+--    c <- (?<<) match 
+--    case c of
+--        Just c' -> return c'
+--        Nothing -> (+<<) v
+--    where
+--        pks = filter isPrimary (tableColumns t)
+--        match v' = if length pks > 0
+--                    then let pkv x = [fieldValue (getRecord x) (columnName c) | c <- pks]
+--                         in length (pkv v) /= 0 && pkv v == pkv v'
+--                    else False
 
 -- ------------------------------------------------------------
 -- Queries.

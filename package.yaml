@@ -39,6 +39,7 @@ dependencies:
 - hs-resource
 - lens
 - data-default
+- hashable
 
 library:
   source-dirs: src

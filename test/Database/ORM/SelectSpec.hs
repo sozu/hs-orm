@@ -194,16 +194,18 @@ spec = do
 
     describe "Convert row to a record" $ do
         it "New record" $ do
-            (c, _) <- flip runStateT (newGraph :: ABCDGraph) $ do
+            ((c, _), _) <- flip runStateT (newGraph :: ABCDGraph) $ do
                         (+<<) (Model (#aid @= 1 <: #cola @= "a1" <: emptyRecord) :: A)
-                        rowToRecord (tableMap M.! "a") [("aid", toSql (2 :: Int)), ("cola", toSql "a2")] :: StateT ABCDGraph IO (Maybe (Cursor A))
+                        rowToRecord (tableMap M.! "a") [("aid", toSql (2 :: Int)), ("cola", toSql "a2")]
+                                    (M.fromList [(0, M.fromList [([toSql (1 :: Int)], 0)])]) 0
             c `shouldSatisfy` isJust
-            show (fromJust c) `shouldBe` "Cursor 1"
+            show (fromJust c :: Cursor A) `shouldBe` "Cursor 1"
 
         it "Existing record" $ do
-            (c, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
+            ((c, _), g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                         (+<<) (Model (#aid @= 1 <: #cola @= "a1" <: emptyRecord) :: A)
-                        rowToRecord (tableMap M.! "a") [("aid", toSql (1 :: Int)), ("cola", toSql "a2")] :: StateT ABCDGraph IO (Maybe (Cursor A))
+                        rowToRecord (tableMap M.! "a") [("aid", toSql (1 :: Int)), ("cola", toSql "a2")]
+                                    (M.fromList [(0, M.fromList [([toSql (1 :: Int)], 0)])]) 0
             c `shouldSatisfy` isJust
             show (fromJust c) `shouldBe` "Cursor 0"
             let r = maybe (undefined :: A) (@< g) c
@@ -211,18 +213,17 @@ spec = do
             view #cola (getRecord r) `shouldBe` "a1"
 
         it "Null record" $ do
-            (c, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
-                        rowToRecord (tableMap M.! "a") [("aid", SqlNull), ("cola", SqlNull)] :: StateT ABCDGraph IO (Maybe (Cursor A))
-            c `shouldSatisfy` isNothing
+            ((c, _), g) <- flip runStateT (newGraph :: ABCDGraph) $ do
+                        rowToRecord (tableMap M.! "a") [("aid", SqlNull), ("cola", SqlNull)] M.empty 0
+            (c :: Maybe (Cursor A)) `shouldSatisfy` isNothing
             length (valuesOf @A g) `shouldBe` 0
                         
         it "Record whose fields are in random order" $ do
-            (c, g) <- flip runStateT (newGraph :: Graph R) $ do
+            ((c, _), g) <- flip runStateT (newGraph :: Graph R) $ do
                         rowToRecord (tableMap M.! "random")
-                                    [("ghi", toSql "GHI"), ("def", toSql "DEF"), ("jkl", toSql "JKL"), ("abc", toSql "ABC")]
-                                        :: StateT (Graph R) IO (Maybe (Cursor R))
+                                    [("ghi", toSql "GHI"), ("def", toSql "DEF"), ("jkl", toSql "JKL"), ("abc", toSql "ABC")] M.empty 0
             c `shouldSatisfy` isJust
-            let r = getRecord (fromJust c @< g) in do
+            let r = getRecord (fromJust (c :: Maybe (Cursor R)) @< g) in do
                 view #abc r `shouldBe` "ABC"
                 view #def r `shouldBe` "DEF"
                 view #ghi r `shouldBe` "GHI"
@@ -233,12 +234,12 @@ spec = do
             r <- newResource mock
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
-                (cursors, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
+                ((cursors, _), g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                                     parseRow (Proxy :: Proxy ABCD) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                    , [("bid", toSql (2 :: Int)), ("colb", toSql "bbb"), ("b_a_id", toSql (1 :: Int))]
                                                                    , [("cid", toSql (3 :: Int)), ("colc", toSql "ccc"), ("c_b_id", toSql (2 :: Int))]
                                                                    , [("did", toSql (4 :: Int)), ("cold", toSql "ddd"), ("d_b_id", toSql (2 :: Int))]
-                                                                   ]
+                                                                   ] M.empty
                 let (ca, cs1) = headCursor cursors
                 let (cb, cs2) = headCursor cs1
                 let (cc, cs3) = headCursor cs2
@@ -261,12 +262,12 @@ spec = do
             r <- newResource mock
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
-                (cursors, g) <- flip runStateT (newGraph :: ABExtraGraph) $ do
+                ((cursors, _), g) <- flip runStateT (newGraph :: ABExtraGraph) $ do
                                     parseRow (Proxy :: Proxy ABExtra) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                       , [("bid", toSql (2 :: Int)), ("colb", toSql "bbb"), ("b_a_id", toSql (1 :: Int))]
                                                                       , [("a", toSql (3 :: Int)), ("b", toSql "ccc")]
                                                                       , [("c", toSql (4 :: Int)), ("d", toSql "ddd")]
-                                                                      ]
+                                                                      ] M.empty
                 let (ca, cs1) = headCursor cursors
                 let (cb, cs2) = headCursor cs1
                 let (cc, cs3) = headCursor cs2
@@ -289,10 +290,10 @@ spec = do
             r <- newResource mock
             let resources = r `RCons` RNil
             withContext @'[DBContext Mock] resources $ do
-                (cursors, g) <- flip runStateT (newGraph :: ABCDGraph) $ do
+                ((cursors, _), g) <- flip runStateT (newGraph :: ABCDGraph) $ do
                                     parseRow (Proxy :: Proxy '[A, B]) [ [("aid", toSql (1 :: Int)), ("cola", toSql "aaa")]
                                                                       , [("bid", SqlNull), ("colb", SqlNull), ("b_a_id", SqlNull)]
-                                                                      ]
+                                                                      ] M.empty
                 let (ca, cs1) = headCursor cursors
                 let (cb, cs2) = headCursor cs1
                 let ra = getRecord (fromJust ca @< g) in do

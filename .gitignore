@@ -2,3 +2,10 @@
 hs-orm.cabal
 *~
 **/.DS_Store
+
+*.aux
+*.eventlog
+*.hp
+*.prof
+*.ps
+*.pdf

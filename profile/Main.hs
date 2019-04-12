@@ -9,11 +9,16 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ImplicitParams #-}
 
 module Main where
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.State
+import System.Environment (getArgs)
+import Data.Proxy
+import Control.Lens hiding ((:>))
 import Data.Extensible
 import Data.Default
 import Data.Convertible
@@ -38,22 +43,48 @@ main = do
     dr <- newResource db
     resources <- lr @+ dr
 
+    args <- getArgs
+
     withContext' @'[DBContext PostgreSQL] resources $ do
-        let p = Model ( #id @= 0
-                     <: #name @= "name"
-                     <: #description @= "description"
-                     <: emptyRecord
-                      ) :: (=+)Parent
-        (_, !graph) <- (`runStateT` (newGraph :: AllInsert ParentChild)) $ do
-            replicateM_ 100 $ do
-                cp <- (+<<) p
-                replicateM_ 10 $ do
-                    cc <- (+<<) $! (Model (#id @= 0 <: #value @= 1.5 <: emptyRecord) :: (=+)Child)
-                    cc -*< cp
-
-        restoreGraph graph
-
-    --print $ valuesOf @((=+)Parent) g
-    --print $ valuesOf @((=+)Child) g
+        case args of
+            []         -> profileInsert
+            ["insert"] -> profileInsert
+            ["update"] -> return ()
+            ["select"] -> profileSelect
+            _          -> return ()
 
     return ()
+
+profileInsert :: (With '[DBContext PostgreSQL])
+              => IO ()
+profileInsert = do
+    let p = Model ( #id @= 0
+                 <: #name @= "name"
+                 <: #description @= "description"
+                 <: emptyRecord
+                  ) :: (=+)Parent
+    (_, !graph) <- (`runStateT` (newGraph :: AllInsert ParentChild)) $ do
+        replicateM_ 1000 $ do
+            cp <- (+<<) p
+            replicateM_ 10 $ do
+                cc <- (+<<) $! (Model (#id @= 0 <: #value @= 1.5 <: emptyRecord) :: (=+)Child)
+                cc -*< cp
+
+    restoreGraph graph
+    return ()
+
+
+profileSelect :: (With '[DBContext PostgreSQL])
+              => IO ()
+profileSelect = do
+    graph <- selectNodes (Proxy :: Proxy ParentChild)
+                         (Proxy :: Proxy Parent)
+                         (..?)
+                         (../)
+                         Nothing
+    let pv = foldl (\acc p -> acc + (p ^. #id)) 0 $ valuesOf @Parent graph
+    let cv = foldl (\acc c -> acc + (c ^. #id)) 0 $ valuesOf @Child graph
+
+    print $ "Parent = " ++ show (length $ valuesOf @Parent graph) ++ " Sum = " ++ show pv
+    print $ "Child = " ++ show (length $ valuesOf @Child graph) ++ " Sum = " ++ show cv
+    print $ "Children of the first parent = " ++ show (length ((cursorsOf' @Parent graph !! 0) *@< graph :: [Cursor Child]))

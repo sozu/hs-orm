@@ -46,6 +46,8 @@ module Database.ORM.Record (
 import GHC.Exts
 import GHC.OverloadedLabels
 import GHC.TypeLits
+import qualified Data.List as L
+import qualified Data.Map as M
 import Data.Functor.Identity
 import Data.Monoid
 import Data.Profunctor
@@ -292,7 +294,7 @@ withSubModel :: ( ExtensibleModel m
                 )
              => m -- ^ A model.
              -> [String] -- ^ Field names.
-             -> (forall n. (SubRecord m n, RoleIndependent n, RoleExchangeable n (RoleExchangeability m)) => n -> a) -- ^ A function applied to aubmodel.
+             -> (forall n. (SubRecord m n, RoleIndependent n, RoleExchangeable n (RoleExchangeability m)) => n -> a) -- ^ A function applied to submodel.
              -> a -- ^ The result of the function.
 withSubModel m cols f = shrinkFor m (reverse cols) (Proxy :: Proxy ('[] :: [Symbol])) f
 
@@ -357,9 +359,9 @@ resolveRelations ta graph p = case relcols of
         -- Just take the first relation from a to b.
         -- This implementation can't deal with multiple relations between a pair of tables.
         relcols = relationsTo ta tableName
-        accessor k c = case map (\cb -> (cb @< graph)) (c @*< graph :: [Cursor b]) of
-                        [v] -> let r = getRecord v in fieldValue r k
-                        _ -> Nothing
+        --accessor k c = L.uncons (c @*< graph :: [Cursor b]) >>= return . fst >>= \c -> let r = getRecord (c @< graph) in fieldValue r k
+        resolver = M.fromList $ reverse $ map (\e -> ((cursorIndex $ edgeFrom e), edgeTo e)) (reversedValuesOf graph :: [Edge a b])
+        accessor k c = resolver M.!? cursorIndex c >>= \c -> let r = getRecord (c @< graph) in fieldValue r k
 
 -- | This class declares a method to traverse edge list and apply a function to each edge.
 class (GraphContainer g a, RecordWrapper a) => EdgeMap g xs a where
