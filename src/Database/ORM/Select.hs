@@ -166,14 +166,12 @@ execSelect pg columns joins modelTypes query holder = do
     execute stmt holder
     rows <- fetchAllRowsAL stmt
 
-    resolver <- newIORef (M.empty :: PKResolver)
-
-    (_, graph) <- flip runStateT (newGraph :: g) $ do
+    (graph, _) <- (`runStateT` M.empty) $ do
+        (_, g) <- (`runStateT` (newGraph :: g)) $ do
                     forM_ rows $ \r -> do
-                        res <- liftIO $ readIORef resolver
-                        (cs, res') <- parseRow modelTypes (sep r columns) res
-                        liftIO $ writeIORef resolver res'
+                        cs <- parseRow modelTypes (sep r columns)
                         addRelations cs joins
+        return g
 
     return graph
     where
@@ -221,33 +219,31 @@ class (GraphFactory g) => RowParser g (as :: [*]) where
     parseRow :: (WithDB db)
              => Proxy as -- ^ List of model types deciding the type a value should be converted to.
              -> [[(String, SqlValue)]] -- ^ Pairs of column name and value in a row.
-             -> PKResolver
-             -> StateT g IO (HList MaybeCursor as, PKResolver) -- ^ Returns list of cursors.
+             -> StateT g (StateT PKResolver IO) (HList MaybeCursor as) -- ^ Returns list of cursors.
 
 instance (GraphFactory g) => RowParser g '[] where
-    parseRow _ _ r = return (HNil, r)
+    parseRow _ _ = return HNil
 
 instance (RowParser g as, GraphContainer g a, RecordWrapper a) => RowParser g (a ': as) where
-    parseRow _ (vs:values) r = do
+    parseRow _ (vs:values) = do
         t <- liftIO $ readSchema $ getName (Proxy :: Proxy a)
-        (c, r') <- rowToRecord t vs r (length values)
-        (cs, r'') <- parseRow (Proxy :: Proxy as) values r'
-        return $ (MaybeCursor c `HCons` cs, r'')
+        c <- rowToRecord t vs (length values)
+        cs <- parseRow (Proxy :: Proxy as) values
+        return $ MaybeCursor c `HCons` cs
 
 -- | Converts values in a row into a cursor of given table.
 rowToRecord :: forall g a. (GraphContainer g a, RecordWrapper a)
             => TableMeta -- ^ Table schema.
             -> [(String, SqlValue)] -- ^ Pairs of column name and value in a row.
-            -> PKResolver
             -> Int
-            -> StateT g IO (Maybe (Cursor a), PKResolver) -- ^ Returns a cursor unless all columns are `SqlNull`.
-rowToRecord t row r k
-    | L.all (\v -> SqlNull == snd v) row = return (Nothing, r)
+            -> StateT g (StateT PKResolver IO) (Maybe (Cursor a)) -- ^ Returns a cursor unless all columns are `SqlNull`.
+rowToRecord t row k
+    | L.all (\v -> SqlNull == snd v) row = return Nothing
     | otherwise = do
         let values = let m = M.fromList row in map (m M.!) $ fieldNames (Proxy :: Proxy (RW'Type a))
         let v = newRecord @a values
-        (c, r') <- findInGraph t v r k
-        return $ (Just c, r')
+        c <- findInGraph t v k
+        return $ Just c
 
 instance Eq ZonedTime where
     (==) t1 t2 = zonedTimeToLocalTime t1 == zonedTimeToLocalTime t2
@@ -278,17 +274,17 @@ appendPKResolver r t vs i = M.alter f t r
 findInGraph :: (GraphContainer g a, RecordWrapper a, Monad m)
             => TableMeta -- ^ Table schema.
             -> a -- ^ Model to insert if the same model is not found.
-            -> PKResolver
             -> Int
-            -> StateT g m (Cursor a, PKResolver) -- ^ Returns the cursor to the model which is found or inserted.
-findInGraph t v r k = do
+            -> StateT g (StateT PKResolver m) (Cursor a) -- ^ Returns the cursor to the model which is found or inserted.
+findInGraph t v k = do
     let pkv = catMaybes [fieldValue (getRecord v) (columnName c) | c <- filter isPrimary (tableColumns t)]
+    r <- lift get
     case resolvePK r k pkv of
-        Just i -> return $ (Cursor i, r)
+        Just i -> return (Cursor i)
         Nothing -> do
             c <- (+<<) v
-            let r' = appendPKResolver r k pkv (cursorIndex c)
-            return (c, r')
+            lift $ put $ appendPKResolver r k pkv (cursorIndex c)
+            return c
 --findInGraph t v = do
 --    c <- (?<<) match 
 --    case c of
