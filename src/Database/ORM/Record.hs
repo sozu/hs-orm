@@ -76,6 +76,7 @@ class ( FieldNames (RW'Type a), KnownSymbol (RW'Name a)
       , Forall (KeyConstraint KnownSymbol) (RW'Type a)
       , Forall (KeyValue KnownSymbol SqlValueConstraint) (RW'Type a)
       , GetExpression (RW'Spec a)
+      , RoleForWhat (RW'Role a)
       ) => RecordWrapper a where
     -- | Determines a name of the table in the form of Symbol.
     type RW'Name a :: Symbol
@@ -160,11 +161,17 @@ instance FieldNames '[] where
 instance (KnownSymbol k, FieldNames as) => FieldNames ((k :> v) ': as) where
     fieldNames _ = symbolVal (Proxy :: Proxy k) : fieldNames (Proxy :: Proxy as)
 
+instance (RecordWrapper r) => RoleForWhat r where
+    roleForInsert _ = roleForInsert (Proxy :: Proxy (RW'Role r))
+    roleForUpdate _ = roleForUpdate (Proxy :: Proxy (RW'Role r))
+    roleForRelate _ = roleForRelate (Proxy :: Proxy (RW'Role r))
+
 instance ( FieldNames xs
          , KnownSymbol n
          , Forall (KeyConstraint KnownSymbol) xs
          , Forall (KeyValue KnownSymbol SqlValueConstraint) xs
          , GetExpression as
+         , RoleForWhat r
          ) => RecordWrapper (TableModel n r (Record xs) as) where
     type RW'Name (TableModel n r (Record xs) as) = n
     type RW'Type (TableModel n r (Record xs) as) = xs

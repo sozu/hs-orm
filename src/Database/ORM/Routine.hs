@@ -69,19 +69,16 @@ class Fetcher g a (args :: [*]) (keys :: [Symbol]) where
 
 instance ( GraphContainer g a
          , SelectNodes g a (EdgeTypes g a)
-         , ElemIndexes (ReplicateType a (RW'KeyTypes a)) (EdgeTypes g a)
-         , PKConditions a (ReplicateType a (RW'KeyTypes a))
+         , ContainsAll' (EdgeTypes g a) '[a]
          , KnownNat (Length (EdgeTypes g a))
          , Forall SqlValueConstraint (RW'KeyTypes a)
          ) => Fetcher g a '[] '[] where
     fetcher values = do
-        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) (reverse values)
+        let conds = pkConditions' (Proxy :: Proxy a) (reverse values)
         selectNodes (Proxy :: Proxy g) (Proxy :: Proxy a) conds (../) Nothing
 
 instance ( GraphContainer g a
          , SelectNodes g a (EdgeTypes g a)
-         , ElemIndexes (ReplicateType a (RW'KeyTypes a)) (EdgeTypes g a)
-         , PKConditions a (ReplicateType a (RW'KeyTypes a))
          , KnownNat (Length (EdgeTypes g a))
          , Forall SqlValueConstraint (RW'KeyTypes a)
          , KnownSymbol k
@@ -95,16 +92,16 @@ instance ( GraphContainer g a
 -- The type of target record is determined by the top type of the graph.
 -- Graph type should be specified by using type application.
 --
--- Returned function accept arguments of types of columns represented by @PK@ appendix of target model.
+-- Returned function accept arguments of types of columns which appear in @PK@ appendix of target model.
 --
 -- > type A = "a" :## '["id" :> Int, "key" :> String, "name" :> String] :^+ PK '["id", "key"]
 -- > type B = "b" :## '["id" :> Int, "name" :> String]
--- > graph <- fetchRecord @(Graph A :><: B :><: Edge (B :- A)) 1 "abc"
+-- > graph <- fetchOne @(Graph A :><: B :><: Edge (B :- A)) 1 "abc"
 --
 -- In above example, 'graph' contains a record of 'a' selected by 'id = 1 and key = "abc"'
--- and records of 'b' having foreign keys indicating the 'a' record.
+-- and records of 'b' referencing the 'a' record.
 --
--- Note: Columns specified by @PK@ must not be an actual primary key of the tabla. 
+-- Note: Columns specified by @PK@ do not have to be an actual primary key of the tabla. 
 fetchOne :: forall g a db. (
             WithDB db
           , a ~ GraphTop g
@@ -119,7 +116,7 @@ type CountModel = ExtraModel '["count" :> Integer] '[ColExp "count" "COUNT(*)"]
 
 type ForCount g = JustRelate g :><: CountModel :><: (CountModel :- ((=*) (GraphTop g)))
 
--- | Make roles of all model types in graph to @Relate'@.
+-- | Changes roles of all model types in graph to @Relate'@.
 --
 -- Note: GHC can't compile higher-order type families like 'Map (f :: * -> *) (xs :: [*])' despite GHCi can.
 -- General type function to convert types of nodes is not available currently.
@@ -127,6 +124,7 @@ type family JustRelate (g :: *) where
     JustRelate (Graph x) = Graph ((=*) x)
     JustRelate (g :><: x) = JustRelate g :><: (=*) x
 
+-- | Changes roles of all model types in a list to @Relate'@.
 type family AllRelate (ts :: [*]) where
     AllRelate '[]       = '[]
     AllRelate (t ': ts) = (=*)t ': AllRelate ts
@@ -147,7 +145,7 @@ countGraph :: forall g g' a' (ts :: [*]) db. (
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
             , ApplyRecordLock db (RW'Spec a')
-            , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
+            , ContainsAll' (EdgeTypes g' a') (AllRelate ts)
             )
             => Condition ts -- ^ Conditions.
             -> IO Integer -- ^ The number of rows.
@@ -166,7 +164,7 @@ countTable :: forall a a' g' (ts :: [*]) db. (
             , SelectNodes g' a' (EdgeTypes g' a')
             , KnownNat (Length (EdgeTypes g' a'))
             , ApplyRecordLock db (RW'Spec a')
-            , ElemIndexes (AllRelate ts) (EdgeTypes g' a')
+            , ContainsAll' (EdgeTypes g' a') (AllRelate ts)
             )
             => Condition ts -- ^ Conditions.
             -> IO Integer -- ^ The number of rows.
@@ -211,18 +209,16 @@ class Deleter g a (args :: [*]) (keys :: [Symbol]) where
 
 instance ( GraphContainer g a
          , RecordWrapper (Head (EdgeTypes g a))
-         , PKConditions a (ReplicateType a (RW'KeyTypes a))
          , KnownNat (Length (EdgeTypes g a))
          , Forall SqlValueConstraint (RW'KeyTypes a)
-         , Deletable g a (ReplicateType a (RW'KeyTypes a))
+         , Deletable g a '[a]
          ) => Deleter g a '[] '[] where
     deleter values = do
-        let conds = pkConditions (Proxy :: Proxy a) (Proxy :: Proxy (ReplicateType a (RW'KeyTypes a))) (reverse values)
+        let conds = pkConditions' (Proxy :: Proxy a) (reverse values)
         deleteByCondition (Proxy :: Proxy g) (Proxy :: Proxy a) conds
         return ()
 
 instance ( GraphContainer g a
-         , PKConditions a (ReplicateType a (RW'KeyTypes a))
          , KnownNat (Length (EdgeTypes g a))
          , Forall SqlValueConstraint (RW'KeyTypes a)
          , KnownSymbol k
@@ -237,7 +233,6 @@ instance ( GraphContainer g a
 -- Usage of the function is similar to @fetchOne@, show its description to know the detail.
 deleteOne :: forall a db. (
              WithDB db
-           , PKConditions a (ReplicateType a (RW'KeyTypes a))
            , Identifiable a
            , Forall SqlValueConstraint (RW'KeyTypes a)
            , Deleter (Graph a) a (RW'KeyTypes a) (RW'Key a))
@@ -256,10 +251,9 @@ type family ReplicateType a (as :: [*]) :: [*] where
     ReplicateType a '[] = '[]
     ReplicateType a (x ': xs) = a ': (ReplicateType a xs)
 
-class PKConditions (t :: *) (ts :: [*]) where
-    pkConditions :: Proxy t -> Proxy ts -> [(String, SqlValue)] -> Condition ts
-
-instance (RecordWrapper t) => PKConditions t '[t] where
-    pkConditions _ _ ((c, v) : _) = (==?) @t c v
-instance (RecordWrapper t, PKConditions t ts) => PKConditions t (t ': ts) where
-    pkConditions p _ ((c, v) : vs) = (==?) @t c v .& pkConditions p (Proxy :: Proxy ts) vs
+pkConditions' :: forall t. (RecordWrapper t)
+              => Proxy t
+              -> [(String, SqlValue)]
+              -> Condition '[t]
+pkConditions' p [(c, v)] = (==?) @t c v
+pkConditions' p ((c, v) : vs) = (==?) @t c v .=& pkConditions' p vs

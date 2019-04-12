@@ -132,29 +132,36 @@ type family (:^+) m a :: * where
     ExtraModel xs as :^+ a = ExtraModel xs (a ': as)
 
 -- | Declares methods to get availabilities for insertion or update from a @ModelRole@ type.
-class RoleForWhat (r :: ModelRole) where
+class RoleForWhat (r :: k) where
     -- | Checks the role can be used for inserting operation.
     roleForInsert :: Proxy r -- ^ A @ModelRole@ type.
                   -> Bool -- ^ Availability for the inserting operation.
     -- | Checks the role can be used for updating operation.
     roleForUpdate :: Proxy r -- ^ A @ModelRole@ type.
                   -> Bool -- ^ Availability for the updating operation.
+    roleForRelate :: Proxy r -- ^ A @ModelRole@ type.
+                  -> Bool -- ^ Availability for the updating operation.
 
 instance RoleForWhat Select' where
     roleForInsert _ = False
     roleForUpdate _ = False
+    roleForRelate _ = False
 instance RoleForWhat Insert' where
     roleForInsert _ = True
     roleForUpdate _ = False
+    roleForRelate _ = False
 instance RoleForWhat Update' where
     roleForInsert _ = False
     roleForUpdate _ = True
+    roleForRelate _ = False
 instance RoleForWhat Relate' where
     roleForInsert _ = False
     roleForUpdate _ = False
+    roleForRelate _ = True
 instance RoleForWhat Extra' where
     roleForInsert _ = False
     roleForUpdate _ = False
+    roleForRelate _ = False
 
 -- ------------------------------------------------------------
 -- Relations.

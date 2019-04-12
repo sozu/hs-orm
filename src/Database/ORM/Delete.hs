@@ -1,14 +1,14 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Database.ORM.Delete (
     -- * Execute delete
@@ -79,14 +79,14 @@ deleteKeys pa keys = do
     return 0
 
 -- | Constraint for deletion by condition.
-type Deletable g a ms = ( GraphContainer g a
+type Deletable g a ts = ( GraphContainer g a
                         , RecordWrapper a
                         , AllRecord (S.EdgeTypes g a)
-                        , AllRecord ms
-                        , ListTables (S.EdgeTypes g a)
-                        , S.Joins g (S.CollectEdges '[a] (S.Edges g)) (S.EdgeTypes g a)
-                        , KnownNat (ElemIndex a (S.EdgeTypes g a))
-                        , ElemIndexes ms (S.EdgeTypes g a)
+                        , AllRecord ts
+                        , ForEachType (S.EdgeTypes g a) RecordWrapper
+                        , S.Joins g (S.Edges g) (S.EdgeTypes g a)
+                        , Contains (S.EdgeTypes g a) a
+                        , ContainsAll' (S.EdgeTypes g a) ts
                         )
 
 {- | Deletes records selected by condition.
@@ -95,20 +95,20 @@ type Deletable g a ms = ( GraphContainer g a
     This function deletes records of table determined by the model of second argument.
     Other model types in the graph are used just for resolving relationship between tables.
 -}
-deleteByCondition :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (Head (S.EdgeTypes g a)), KnownNat (Length (S.EdgeTypes g a)))
+deleteByCondition :: forall db g a ts ms. (WithDB db, ms ~ S.EdgeTypes g a, Deletable g a ts, RecordWrapper (Head ms), KnownNat (Length ms))
                   => Proxy g -- ^ Type of a graph.
                   -> Proxy a -- ^ Model type to be deleted.
-                  -> Condition ms -- ^ Conditions to select records.
+                  -> Condition ts -- ^ Conditions to select records.
                   -> IO Integer -- ^ The number of affected rows.
 deleteByCondition pg pa conds = do
     context <- readIORef $ contextOf @(DBContext db) ?cxt
 
-    let n = natVal (Proxy :: Proxy (Length (S.EdgeTypes g a)))
+    let n = natVal (Proxy :: Proxy (Length ms))
     let aliases = map (\i -> 't':show i) [0..n-1]
 
     ta <- readSchema $ getName pa
 
-    let w = formatCondition conds (Proxy :: Proxy (S.EdgeTypes g a)) aliases
+    let w = formatCondition conds (Proxy :: Proxy ms) aliases
     (q, holder) <- joinDeleteQuery pg pa conds ta aliases
 
     logDWithId $ "SQL: " ++ q
@@ -136,17 +136,17 @@ pkDeleteQuery t vs = (body ++ L.intercalate " OR " (replicate (length vs) cond),
         cond = "(" ++ L.intercalate " AND " (map (\c -> c ++ " = ?") (map fst $ vs !! 0)) ++ ")"
 
 -- | Creates query string to delete records selected by conditions.
-joinDeleteQuery :: forall db g a ms. (WithDB db, Deletable g a ms, RecordWrapper (Head (S.EdgeTypes g a)))
+joinDeleteQuery :: forall db g a ts. (WithDB db, Deletable g a ts, RecordWrapper (Head (S.EdgeTypes g a)))
                 => Proxy g -- ^ Type of a graph.
                 -> Proxy a -- ^ Model type to be deleted.
-                -> Condition ms -- ^ Conditions to select records.
+                -> Condition ts -- ^ Conditions to select records.
                 -> TableMeta -- ^ Table schema.
                 -> [String] -- ^ Aliases of tables.
                 -> IO (String, [SqlValue]) -- ^ Query string and place holder.
 joinDeleteQuery pg pa conds t aliases = do
-    joins <- S.collectJoins (Proxy :: Proxy (S.CollectEdges '[a] (S.Edges g))) (Proxy :: Proxy (S.EdgeTypes g a)) aliases :: IO [S.JoinEdge g (S.EdgeTypes g a)]
+    joins <- S.collectJoins (Proxy :: Proxy (S.Edges g)) (Proxy :: Proxy (S.EdgeTypes g a)) aliases :: IO [S.JoinEdge g (S.EdgeTypes g a)]
 
-    let index = fromInteger $ natVal (Proxy :: Proxy (ElemIndex a (S.EdgeTypes g a)))
+    let index = indexOf 0 (Proxy :: Proxy (S.EdgeTypes g a)) (Proxy :: Proxy a)
 
     let usings = filter (\(u, _) -> u /= tableName t) $ zip (listTables (Proxy :: Proxy (S.EdgeTypes g a))) aliases
 
@@ -169,12 +169,7 @@ joinDeleteQuery pg pa conds t aliases = do
 
     return (q, whereValues c)
 
--- | Declares a method to get table names specified by a list of model types.
-class ListTables (as :: [*]) where
-    listTables :: Proxy as -> [String]
-
-instance ListTables '[] where
-    listTables _ = []
-
-instance (ListTables as, RecordWrapper a) => ListTables (a ': as) where
-    listTables _ = getName (Proxy :: Proxy a) : listTables (Proxy :: Proxy as)
+listTables :: (ForEachType as RecordWrapper)
+            => Proxy as
+            -> [String]
+listTables p = forEachType 0 (\i -> getName) p (Proxy :: Proxy RecordWrapper)
