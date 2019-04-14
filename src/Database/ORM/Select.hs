@@ -257,6 +257,7 @@ resolvePK :: PKResolver
           -> Int
           -> [SqlValue]
           -> Maybe Int
+resolvePK r t [] = Nothing
 resolvePK r t vs = (r M.!? t) >>= (M.!? vs)
 
 appendPKResolver :: PKResolver
@@ -285,17 +286,6 @@ findInGraph t v k = do
             c <- (+<<) v
             lift $ put $ appendPKResolver r k pkv (cursorIndex c)
             return c
---findInGraph t v = do
---    c <- (?<<) match 
---    case c of
---        Just c' -> return c'
---        Nothing -> (+<<) v
---    where
---        pks = filter isPrimary (tableColumns t)
---        match v' = if length pks > 0
---                    then let pkv x = [fieldValue (getRecord x) (columnName c) | c <- pks]
---                         in length (pkv v) /= 0 && pkv v == pkv v'
---                    else False
 
 -- ------------------------------------------------------------
 -- Queries.
@@ -313,7 +303,8 @@ createSelectQuery :: (FormattedCondition c, FormattedOrderBy o)
 createSelectQuery cols (t, alias) joins conds sorts lo = s ++ f ++ w ++ o ++ (maybe "" (\(l, o) -> " LIMIT ? OFFSET ?") lo)
     where
         s =  "SELECT " ++ L.intercalate ", " (L.concat cols)
-        f =  " FROM " ++ t ++ " AS " ++ alias ++ " " ++ L.intercalate " " (filter (/= "") $ map show joins)
+        j = fst $ arrangeJoins ([], joins) [t]
+        f =  " FROM " ++ t ++ " AS " ++ alias ++ " " ++ L.intercalate " " (filter (/= "") $ map show j)
         w =  let w' = whereClause conds
              in if w' == "" then "" else " WHERE " ++ w'
         o =  let o' = orders sorts
@@ -405,7 +396,11 @@ arrangeJoins :: ([JoinEdge g ms], [JoinEdge g ms])
              -> [String]
              -> ([JoinEdge g ms], [JoinEdge g ms])
 arrangeJoins (ls, rs) ts = if length ls' == 0
-                            then (ls, rs)
+                            then if length rs' == 0
+                                then (ls ++ ls', rs)
+                                else
+                                    let rs'' = (filter (isJust . getJoin) rs')
+                                    in arrangeJoins (ls ++ ls', rs'') (map (leftTable . fromJust . getJoin) rs'')
                             else arrangeJoins (ls ++ ls', rs') (map (rightTable . fromJust . getJoin) ls')
     where
         (ls', rs') = L.partition (\j -> maybe False (`elem` ts) (leftTable <$> getJoin j)) rs

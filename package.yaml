@@ -58,6 +58,7 @@ executables:
     dependencies:
     - hs-orm
 
+benchmarks:
   hs-orm-profile:
     main:                 Main.hs
     source-dirs:          profile
