@@ -359,7 +359,7 @@ data Join = Join { leftIndex :: Int -- ^ Index of lhs table.
                  , rightAlias :: String -- ^ Alias of rhs table.
                  , leftColumn :: String -- ^ Column name of lhs table.
                  , rightColumn :: String -- ^ Column name of rhs table.
-                 }
+                 } deriving (Eq)
 
 -- | Edge information corresponding to a join clause in q query.
 data JoinEdge g (ms :: [*]) = forall a b (rs :: [*]). (GraphContainer g (EdgeT a b rs), JoinTypeable rs, Contains ms a, Contains ms b)
@@ -395,15 +395,18 @@ joinCondition (JoinEdge _ _ _ (Just j)) = Just $ leftAlias j ++ "." ++ leftColum
 arrangeJoins :: ([JoinEdge g ms], [JoinEdge g ms])
              -> [String]
              -> ([JoinEdge g ms], [JoinEdge g ms])
-arrangeJoins (ls, rs) ts = if length ls' == 0
-                            then if length rs' == 0
-                                then (ls ++ ls', rs)
-                                else
-                                    let rs'' = (filter (isJust . getJoin) rs')
-                                    in arrangeJoins (ls ++ ls', rs'') (map (leftTable . fromJust . getJoin) rs'')
-                            else arrangeJoins (ls ++ ls', rs') (map (rightTable . fromJust . getJoin) ls')
+arrangeJoins (stacked, []) _                 = (stacked, [])
+arrangeJoins (stacked, remainders) []        = (stacked, remainders)
+arrangeJoins js@(stacked, remainders) (t:ts) = let js' = arrange js t in arrangeJoins js' ts
     where
-        (ls', rs') = L.partition (\j -> maybe False (`elem` ts) (leftTable <$> getJoin j)) rs
+        arrange :: ([JoinEdge g ms], [JoinEdge g ms]) -- ^ Stacked edges and remainders.
+                -> String -- ^ Table name edges from which are stacked.
+                -> ([JoinEdge g ms], [JoinEdge g ms]) -- ^ Updated stacked edges and remainders.
+        arrange (stacked, remainders) t =
+            let (ls, rs) = L.partition (\j -> maybe False (== t) (leftTable <$> getJoin j)) remainders
+                (stacked', remainders') = arrangeJoins (stacked ++ ls, rs) (map (rightTable . fromJust . getJoin) ls)
+                (ls', rs') = L.partition (\j -> maybe False (== t) (rightTable <$> getJoin j)) remainders'
+            in arrangeJoins (stacked' ++ ls', rs') (map (leftTable . fromJust . getJoin) ls')
 
 -- | Declares a method to collect join informations from edges in a graph.
 class Joins g edges (ms :: [*]) where

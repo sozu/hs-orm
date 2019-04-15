@@ -69,6 +69,24 @@ type ABCD = '[A, B, C, D]
 type WithExtra = '[A, B, C, D, Extra1, Extra2]
 type ABExtra = '[A, B, Extra1, Extra2]
 
+type AllConnectedEdge = Graph A
+                         :><: B
+                         :><: C
+                         :><: E
+                         :><: (B :- A)
+                         :><: (C :- B)
+                         :><: (E :- C)
+
+type DisconnectedEdge = Graph A
+                         :><: B
+                         :><: C
+                         :><: E
+                         :><: (B :- A)
+                         :><: (E :- C)
+
+instance Eq (JoinEdge g ms) where
+    JoinEdge f1 t1 r1 j1 == JoinEdge f2 t2 r2 j2 = j1 == j2
+
 col :: Bool -> String -> Bool -> ColumnMeta
 col pk n auto = ColumnMeta pk n "" "" False auto []
 
@@ -336,6 +354,58 @@ spec = do
 
             length (valuesOf @(B :- A) g') `shouldBe` 1
             length (valuesOf @(C :- B) g') `shouldBe` 0
+
+    describe "Arrangement of join clause" $ do
+        it "As declared" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            withContext' @'[DBContext Mock] resources $ do
+                joins <- sequence [ toJoin (Proxy :: Proxy (Edge B A)) (Proxy :: Proxy '[A, B, C, D]) ["a", "b", "c", "d"]
+                                  , toJoin (Proxy :: Proxy (Edge C B)) (Proxy :: Proxy '[A, B, C, D]) ["a", "b", "c", "d"]
+                                  , toJoin (Proxy :: Proxy (Edge D B)) (Proxy :: Proxy '[A, B, C, D]) ["a", "b", "c", "d"]
+                                  ] :: IO [JoinEdge ABCDGraph '[A, B, C, D]]
+                let joins' = fst $ arrangeJoins ([], joins) ["a"]
+                length joins' `shouldBe` length joins
+                forM_ (zip joins joins') $ \(j, j') -> j `shouldBe` j'
+
+        it "Arranged in dependency order" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            withContext' @'[DBContext Mock] resources $ do
+                joins <- sequence [ toJoin (Proxy :: Proxy (Edge E C)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  , toJoin (Proxy :: Proxy (Edge B A)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  , toJoin (Proxy :: Proxy (Edge C B)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  ] :: IO [JoinEdge AllConnectedEdge '[A, B, C, E]]
+                let joins' = fst $ arrangeJoins ([], joins) ["a"]
+                length joins' `shouldBe` length joins
+                joins' !! 0 `shouldBe` joins !! 1
+                joins' !! 1 `shouldBe` joins !! 2
+                joins' !! 2 `shouldBe` joins !! 0
+
+        it "Starting from intermediate node" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            withContext' @'[DBContext Mock] resources $ do
+                joins <- sequence [ toJoin (Proxy :: Proxy (Edge E C)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  , toJoin (Proxy :: Proxy (Edge B A)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  , toJoin (Proxy :: Proxy (Edge C B)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  ] :: IO [JoinEdge AllConnectedEdge '[A, B, C, E]]
+                let joins' = fst $ arrangeJoins ([], joins) ["c"]
+                length joins' `shouldBe` length joins
+                joins' !! 0 `shouldBe` joins !! 2
+                joins' !! 1 `shouldBe` joins !! 1
+                joins' !! 2 `shouldBe` joins !! 0
+
+        it "Discards disconnected edge" $ do
+            r <- newResource mock
+            let resources = r `RCons` RNil
+            withContext' @'[DBContext Mock] resources $ do
+                joins <- sequence [ toJoin (Proxy :: Proxy (Edge B A)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  , toJoin (Proxy :: Proxy (Edge E C)) (Proxy :: Proxy '[A, B, C, E]) ["a", "b", "c", "e"]
+                                  ] :: IO [JoinEdge DisconnectedEdge '[A, B, C, E]]
+                let joins' = fst $ arrangeJoins ([], joins) ["a"]
+                length joins' `shouldBe` 1
+                joins' !! 0 `shouldBe` joins !! 0
 
     describe "Query creation" $ do
         it "With all kinds of clauses" $ do
